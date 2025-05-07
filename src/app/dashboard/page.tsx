@@ -2,6 +2,7 @@ import { currentUser } from '@clerk/nextjs/server';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { MapPinned } from 'lucide-react';
+import { UserButton } from '@clerk/nextjs';
 import RouteForm from '@/components/route-form';
 
 export default async function DashboardPage() {
@@ -31,9 +32,9 @@ export default async function DashboardPage() {
             <span className="font-bold">OptiRoutePro Dashboard</span>
           </Link>
           <div className="flex flex-1 items-center justify-end space-x-4">
-            <nav className="flex items-center space-x-1">
-              {/* UserButton will go here once Clerk is fully set up */}
-              <p className="text-sm text-muted-foreground">Welcome, {user.firstName || user.emailAddresses[0]?.emailAddress || 'User'}</p>
+            <nav className="flex items-center space-x-2">
+              <p className="text-sm text-muted-foreground hidden sm:inline-block">Welcome, {user.firstName || user.emailAddresses[0]?.emailAddress || 'User'}</p>
+              <UserButton afterSignOutUrl="/" />
             </nav>
           </div>
         </div>
