@@ -147,7 +147,8 @@ export async function POST(request: Request) {
         }
         
         const route = routeData.routes[0];
-        console.log('HERE API Route Summary:', route.summary); // Log the summary object
+        // route.summary is not present at the top level for multi-section routes.
+        // The total summary is calculated below by summing section summaries.
         // Map original IDs back to the sections if possible.
         // The sections are between the waypoints in finalOptimizedWaypoints.
         // We need to associate the original input (e.g., address string, original ID from form)

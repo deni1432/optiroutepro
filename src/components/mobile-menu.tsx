@@ -46,15 +46,35 @@ export default function MobileMenu({ isOpen, toggleMenu, isDashboard }: MobileMe
               <Link href="/dashboard" className={linkProps} onClick={toggleMenu}>
                 Dashboard
               </Link>
-              <Link href="/#pricing" className={linkProps} onClick={toggleMenu}>
+              <Link href="/pricing" className={linkProps} onClick={toggleMenu}>
                 Pricing
               </Link>
               {/* Common auth links/buttons */}
               <div className="mt-auto p-4 border-t">
                 <SignedIn>
-                  <div className="flex items-center justify-between">
-                    <span>Account</span>
-                    <UserButton afterSignOutUrl="/" />
+                  {/* Make the entire row clickable to open UserButton modal */}
+                  {/* Use flex items-center and space-x-2 for layout */}
+                  {/* Make the entire row clickable to open UserButton modal */}
+                  {/* Use flex items-center and space-x-2 for layout */}
+                  <div
+                    className="flex items-center space-x-2 py-3 px-4 hover:bg-accent cursor-pointer" // Added space-x-2, hover effect, and cursor
+                    onClick={() => {
+                      // Find the UserButton element and trigger its click
+                      // Use a more specific selector if needed, but .cl-userButton is standard
+                      const userButton = document.querySelector('.cl-userButton');
+                      if (userButton instanceof HTMLElement) {
+                        userButton.click();
+                      }
+                      toggleMenu(); // Close the mobile menu after clicking
+                    }}
+                  >
+                    {/* UserButton on the left - Fine-tune vertical alignment */}
+                    {/* Add a small top margin to nudge the icon down */}
+                    <div className="flex items-center mt-0.5"> {/* Added mt-0.5 */}
+                      <UserButton afterSignOutUrl="/" appearance={{ elements: { userButtonAvatarBox: "w-6 h-6" } }} /> {/* Adjusted size */}
+                    </div>
+                    {/* Account text on the right - Ensure it's vertically centered */}
+                    <span className="flex items-center">Account</span> {/* Wrap text to ensure it's flex-aligned */}
                   </div>
                 </SignedIn>
                 <SignedOut>

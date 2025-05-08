@@ -1,57 +1,59 @@
 'use client'; // Needs to be a client component to manage state for the menu
 
-import { useState } from 'react'; // Import useState
+import { useState } from 'react'; // Still needed for loadingPriceId
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { ArrowRight, MapPinned, Users, Gift } from 'lucide-react';
-import { UserButton, SignedIn, SignedOut, SignInButton } from '@clerk/nextjs';
-import HamburgerToggle from '@/components/hamburger-toggle'; // Import the new component
-import MobileMenu from '@/components/mobile-menu'; // Import MobileMenu
+import { ArrowRight, MapPinned, Users, Gift } from 'lucide-react'; // MapPinned needed for Header import below? No, Header imports it.
+import { useUser } from '@clerk/nextjs'; // Keep useUser for handleSubscribe logic
+import Header from '@/components/header'; // Import the new Header component
+import PricingSection from '@/components/pricing-section'; // Import PricingSection
 
 export default function HomePage() {
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  // Mobile menu state is now managed within Header component
+  const [loadingPriceId, setLoadingPriceId] = useState<string | null>(null); // For loading state of subscribe buttons
+  const { isSignedIn, user, isLoaded } = useUser(); // Keep for handleSubscribe and potentially PricingSection props if needed
 
-  const toggleMobileMenu = () => {
-    setIsMobileMenuOpen(!isMobileMenuOpen);
+  // toggleMobileMenu is no longer needed here
+
+  const handleSubscribe = async (priceId: string) => {
+    if (!isSignedIn) {
+      // If not signed in, redirect to sign-in page with the priceId as a query parameter
+      window.location.href = `/sign-in?priceId=${priceId}`;
+      return; // Stop further execution
+    }
+
+    setLoadingPriceId(priceId);
+    try {
+      const response = await fetch('/api/create-checkout-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ priceId }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create checkout session');
+      }
+
+      const { sessionId, url } = await response.json();
+      if (url) {
+        window.location.href = url; // Redirect to Stripe Checkout
+      } else {
+        throw new Error('Checkout session URL not found.');
+      }
+    } catch (error) {
+      console.error('Subscription error:', error);
+      alert(`Error: ${(error as Error).message}`);
+    } finally {
+      setLoadingPriceId(null);
+    }
   };
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-950">
-      {/* Header */}
-      <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        {/* Added mobile padding */}
-        <div className="container mx-auto flex h-14 max-w-screen-2xl items-center justify-between px-4 sm:px-6 lg:px-8"> {/* Added justify-between */}
-          <Link href="/" className="flex items-center space-x-2"> {/* Removed mr-6 for better spacing with hamburger */}
-            <MapPinned className="h-6 w-6 text-primary" />
-            <span className="font-bold sm:inline-block">OptiRoutePro</span>
-          </Link>
-          
-          {/* Desktop Navigation */}
-          <nav className="hidden lg:flex flex-1 items-center space-x-4 justify-end"> {/* Hidden on mobile, flex on lg */}
-            <Link href="/dashboard">
-              <Button variant="ghost">Dashboard</Button>
-            </Link>
-            <Link href="/#pricing">
-              <Button variant="ghost">Pricing</Button>
-            </Link>
-            <SignedIn>
-              <UserButton afterSignOutUrl="/" />
-            </SignedIn>
-            <SignedOut>
-              <SignInButton mode="modal">
-                <Button variant="ghost">Sign In</Button>
-              </SignInButton>
-            </SignedOut>
-          </nav>
-
-          {/* Mobile Buttons (Sign In / Dashboard) and Hamburger Toggle */}
-          <div className="lg:hidden"> {/* Wrapper for mobile toggle, removed flex and space-x-2 */}
-            {/* Hamburger Menu Toggle */}
-            <HamburgerToggle isOpen={isMobileMenuOpen} toggleMenu={toggleMobileMenu} />
-          </div>
-        </div>
-      </header>
-      <MobileMenu isOpen={isMobileMenuOpen} toggleMenu={toggleMobileMenu} isDashboard={false} />
+      <Header /> {/* Use the reusable Header component */}
 
       {/* Hero Section */}
       <main className="flex-1">
@@ -100,54 +102,10 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Pricing Section (Placeholder) */}
-        <section id="pricing" className="py-16">
-          <div className="container mx-auto px-4 md:px-6 text-center">
-            <h2 className="text-3xl font-bold mb-4">Simple, Transparent Pricing</h2>
-            <p className="text-muted-foreground mb-12 max-w-xl mx-auto">
-              Choose the plan that's right for you. Get started for free, then upgrade as your needs grow.
-            </p>
-            <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3 max-w-4xl mx-auto">
-              {/* Free Tier Card */}
-              <div className="border rounded-lg p-8 shadow-lg">
-                <h3 className="text-2xl font-semibold mb-2">Free</h3>
-                <p className="text-4xl font-bold mb-4">$0<span className="text-lg font-normal text-muted-foreground">/mo</span></p>
-                <ul className="space-y-2 text-muted-foreground mb-6 text-left">
-                  <li>✓ Up to 5 stops per route</li>
-                  <li>✓ 2 optimizations per day</li>
-                  <li>✓ Basic map preview</li>
-                </ul>
-                <Button className="w-full" variant="outline">Get Started</Button>
-              </div>
-              {/* Pro Tier Card */}
-              <div className="border-2 border-primary rounded-lg p-8 shadow-xl relative">
-                <div className="absolute top-0 -translate-y-1/2 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground px-3 py-1 text-sm font-semibold rounded-full">
-                  Most Popular
-                </div>
-                <h3 className="text-2xl font-semibold mb-2">Pro</h3>
-                <p className="text-4xl font-bold mb-4">$10<span className="text-lg font-normal text-muted-foreground">/mo</span></p>
-                <ul className="space-y-2 text-muted-foreground mb-6 text-left">
-                  <li>✓ Up to 50 stops per route</li>
-                  <li>✓ Unlimited optimizations</li>
-                  <li>✓ Save & manage routes</li>
-                  <li>✓ Priority support</li>
-                </ul>
-                <Button className="w-full">Choose Pro</Button>
-              </div>
-              {/* Business Tier Card (Placeholder) */}
-              <div className="border rounded-lg p-8 shadow-lg">
-                <h3 className="text-2xl font-semibold mb-2">Business</h3>
-                <p className="text-4xl font-bold mb-4">$25<span className="text-lg font-normal text-muted-foreground">/mo</span></p>
-                <ul className="space-y-2 text-muted-foreground mb-6 text-left">
-                  <li>✓ All Pro features</li>
-                  <li>✓ Team accounts (soon)</li>
-                  <li>✓ API access (soon)</li>
-                </ul>
-                <Button className="w-full" variant="outline">Contact Us</Button>
-              </div>
-            </div>
-          </div>
-        </section>
+        <PricingSection
+          handleSubscribe={handleSubscribe}
+          loadingPriceId={loadingPriceId}
+        />
 
         {/* Referral Hook Section (Placeholder) */}
         <section id="referral" className="py-16 bg-primary/10">
