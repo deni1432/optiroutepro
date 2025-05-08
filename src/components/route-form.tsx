@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,15 +9,79 @@ import { PlusCircle, XCircle, MapPin, Navigation } from 'lucide-react';
 interface Stop {
   id: string;
   value: string;
+  lat?: number;
+  lng?: number;
+  error?: string; // To store geocoding errors per stop
 }
 
-export default function RouteForm() {
+interface GeocodedWaypoint {
+  lat: number;
+  lng: number;
+  id?: string;
+}
+
+interface OptimizedRouteSection { // This represents a leg of the journey
+  departure: { place: any; time: string; originalId?: string };
+  arrival: { place: any; time: string; originalId?: string };
+  summary: { duration: number; length: number };
+  polyline: string;
+  actions?: any[];
+}
+
+// This is the structure expected by the onRouteOptimized callback,
+// matching the backend's /api/optimize-route response.
+interface ApiOptimizedRouteResponse {
+  optimizedWaypointDetails: Array<{ id: string; lat: number; lng: number; }>;
+  routeSections: OptimizedRouteSection[]; // OptimizedRouteSection is defined above
+  totalDuration: number;
+  totalLength: number;
+}
+
+// Define the structure for the original points data to be passed up
+interface OriginalPointData {
+  id: string; // 'origin', 'destination', or stop.id
+  value: string; // The address string
+}
+
+interface RouteFormProps {
+  // Ensure this uses the correct, single definition for the callback
+  onRouteOptimized: (data: ApiOptimizedRouteResponse | null, originalPoints: OriginalPointData[]) => void;
+  // We might also want a prop to clear the route if the form is reset or inputs change significantly
+  // onClearRoute: () => void;
+}
+
+export default function RouteForm({ onRouteOptimized }: RouteFormProps) {
   const [origin, setOrigin] = useState('');
-  const [stops, setStops] = useState<Stop[]>([{ id: crypto.randomUUID(), value: '' }]);
+  const [destination, setDestination] = useState(''); // New state for destination
+  const [stops, setStops] = useState<Stop[]>([]); // Initialize with no via stops by default
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // const [optimizedRouteData, setOptimizedRouteData] = useState<OptimizedRouteResponse | null>(null);
+  // This state will now be managed by the parent (DashboardPage)
+
+
+  // Helper function to geocode a single address
+  const geocodeAddress = async (address: string): Promise<GeocodedWaypoint | { error: string }> => {
+    try {
+      const response = await fetch('/api/geocode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        return { error: data.error || `Failed to geocode: ${address}` };
+      }
+      return { lat: data.lat, lng: data.lng };
+    } catch (err) {
+      console.error('Geocoding fetch error:', err);
+      return { error: `Network error geocoding: ${address}` };
+    }
+  };
 
   const handleAddStop = () => {
-    if (stops.length < 50) { // Max 50 stops as per requirements
+    // Max 48 via stops + origin + destination = 50 total points
+    if (stops.length < 48) {
       setStops([...stops, { id: crypto.randomUUID(), value: '' }]);
     }
   };
@@ -33,12 +97,99 @@ export default function RouteForm() {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsLoading(true);
-    // TODO: Implement API call to backend for geocoding and optimization
-    console.log('Form submitted:', { origin, stops });
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    setIsLoading(false);
-    // TODO: Handle API response and update UI (e.g., show map, list of stops)
+    setError(null);
+    const emptyOriginalPoints: OriginalPointData[] = [];
+    onRouteOptimized(null, emptyOriginalPoints); // Clear previous data in parent via callback
+
+
+    // 1. Geocode Origin
+    if (!origin) {
+        setError('Origin address is required.');
+        setIsLoading(false);
+        return;
+    }
+    const originGeocoded = await geocodeAddress(origin);
+    if ('error' in originGeocoded) {
+      setError(`Origin geocoding failed: ${originGeocoded.error}`);
+      setIsLoading(false);
+      return;
+    }
+
+    // 2. Geocode Destination
+    if (!destination) {
+        setError('Destination address is required.');
+        setIsLoading(false);
+        return;
+    }
+    const destinationGeocoded = await geocodeAddress(destination);
+    if ('error' in destinationGeocoded) {
+        setError(`Destination geocoding failed: ${destinationGeocoded.error}`);
+        setIsLoading(false);
+        return;
+    }
+
+    // 3. Geocode Via Stops (if any)
+    let validGeocodedViaStops: (Stop & GeocodedWaypoint)[] = [];
+    if (stops.length > 0) {
+        const geocodedViaStopsPromises = stops.map(async (stop) => {
+            if (!stop.value.trim()) return { ...stop, error: "Empty via stop address."}; // Skip empty via stops silently or handle as error
+            const result = await geocodeAddress(stop.value);
+            if ('error' in result) {
+            return { ...stop, error: result.error };
+            }
+            return { ...stop, lat: result.lat, lng: result.lng, error: undefined };
+        });
+
+        const geocodedViaStopsResults = await Promise.all(geocodedViaStopsPromises);
+        
+        const viaStopsWithErrors = geocodedViaStopsResults.filter(s => s.error);
+        if (viaStopsWithErrors.length > 0) {
+            setError(`Failed to geocode ${viaStopsWithErrors.length} via stop(s). First error: ${viaStopsWithErrors[0].error}`);
+            setStops(geocodedViaStopsResults); // Update stops to show errors
+            setIsLoading(false);
+            return;
+        }
+        validGeocodedViaStops = geocodedViaStopsResults.filter(s => s.lat !== undefined && s.lng !== undefined) as (Stop & GeocodedWaypoint)[];
+    }
+    
+    // 4. Call Optimize Route API
+    try {
+      const payload = {
+        origin: { lat: originGeocoded.lat, lng: originGeocoded.lng, id: 'origin' }, // Add id
+        destination: { lat: destinationGeocoded.lat, lng: destinationGeocoded.lng, id: 'destination' }, // Add id
+        viaStops: validGeocodedViaStops.map(s => ({ lat: s.lat!, lng: s.lng!, id: s.id })),
+      };
+      
+      const response = await fetch('/api/optimize-route', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.error || 'Failed to optimize route.');
+        setIsLoading(false);
+        return;
+      }
+      
+      // Prepare original points data with their IDs
+      const originalPoints: OriginalPointData[] = [
+        { id: 'origin', value: origin },
+        ...validGeocodedViaStops.map(s => ({ id: s.id, value: s.value })),
+        { id: 'destination', value: destination },
+      ];
+      
+      onRouteOptimized(data, originalPoints); // Pass data and original points to parent
+      console.log('Optimized Route Data (from RouteForm):', data);
+      console.log('Original Points Data (from RouteForm):', originalPoints);
+    } catch (err) {
+      console.error('Optimize route fetch error:', err);
+      setError('Network error during route optimization.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -48,10 +199,11 @@ export default function RouteForm() {
           <MapPin className="mr-2 h-6 w-6 text-primary" />
           Plan Your Route
         </CardTitle>
-        <CardDescription>Enter your starting point and up to 50 stops to optimize your journey.</CardDescription>
+        <CardDescription>Enter your origin, destination, and any via stops to optimize your journey.</CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
         <CardContent className="space-y-6">
+          {/* Origin Input */}
           <div>
             <label htmlFor="origin" className="block text-sm font-medium text-foreground mb-1">
               Origin
@@ -67,35 +219,34 @@ export default function RouteForm() {
             />
           </div>
 
+          {/* Via Stops Section */}
           <div className="space-y-4">
             <label className="block text-sm font-medium text-foreground">
-              Stops
+              Via Stops (Optional)
             </label>
             {stops.map((stop, index) => (
               <div key={stop.id} className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground w-8 text-right">{index + 1}.</span>
                 <Input
                   type="text"
-                  placeholder={`Enter stop ${index + 1} address`}
+                  placeholder={`Enter via stop ${index + 1} address`}
                   value={stop.value}
                   onChange={(e) => handleStopChange(stop.id, e.target.value)}
-                  required
+                  // Not required, as via stops are optional
                   className="flex-grow"
                 />
-                {stops.length > 1 && (
-                  <Button
+                <Button // Always show remove button for via stops
                     type="button"
                     variant="ghost"
                     size="icon"
                     onClick={() => handleRemoveStop(stop.id)}
-                    aria-label="Remove stop"
-                  >
+                    aria-label="Remove via stop"
+                >
                     <XCircle className="h-5 w-5 text-destructive" />
-                  </Button>
-                )}
+                </Button>
               </div>
             ))}
-            {stops.length < 50 && (
+            {stops.length < 48 && ( // Max 48 via stops
               <Button
                 type="button"
                 variant="outline"
@@ -103,10 +254,36 @@ export default function RouteForm() {
                 className="w-full group"
               >
                 <PlusCircle className="mr-2 h-4 w-4 transition-transform group-hover:scale-110" />
-                Add Stop
+                Add Via Stop
               </Button>
             )}
           </div>
+          
+          {/* Destination Input */}
+          <div>
+            <label htmlFor="destination" className="block text-sm font-medium text-foreground mb-1">
+              Destination
+            </label>
+            <Input
+              id="destination"
+              type="text"
+              placeholder="Enter final destination address"
+              value={destination}
+              onChange={(e) => setDestination(e.target.value)}
+              required
+              className="w-full"
+            />
+          </div>
+          
+          {error && (
+            <p className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">{error}</p>
+          )}
+          {/* Added margin-top for spacing */}
+          <div className="mt-6">
+            {/* The button is inside CardFooter, which already has padding.
+                Adding margin-top to a div wrapping the button provides extra space. */}
+          </div>
+
         </CardContent>
         <CardFooter>
           <Button type="submit" className="w-full group" disabled={isLoading}>

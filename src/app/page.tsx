@@ -1,37 +1,57 @@
+'use client'; // Needs to be a client component to manage state for the menu
+
+import { useState } from 'react'; // Import useState
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { ArrowRight, MapPinned, Users, Gift } from 'lucide-react';
 import { UserButton, SignedIn, SignedOut, SignInButton } from '@clerk/nextjs';
+import HamburgerToggle from '@/components/hamburger-toggle'; // Import the new component
+import MobileMenu from '@/components/mobile-menu'; // Import MobileMenu
 
 export default function HomePage() {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  const toggleMobileMenu = () => {
+    setIsMobileMenuOpen(!isMobileMenuOpen);
+  };
+
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-950">
       {/* Header */}
       <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container mx-auto flex h-14 max-w-screen-2xl items-center">
-          <Link href="/" className="mr-6 flex items-center space-x-2">
+        {/* Added mobile padding */}
+        <div className="container mx-auto flex h-14 max-w-screen-2xl items-center justify-between px-4 sm:px-6 lg:px-8"> {/* Added justify-between */}
+          <Link href="/" className="flex items-center space-x-2"> {/* Removed mr-6 for better spacing with hamburger */}
             <MapPinned className="h-6 w-6 text-primary" />
             <span className="font-bold sm:inline-block">OptiRoutePro</span>
           </Link>
-          <nav className="flex flex-1 items-center space-x-4 sm:justify-end">
+          
+          {/* Desktop Navigation */}
+          <nav className="hidden lg:flex flex-1 items-center space-x-4 justify-end"> {/* Hidden on mobile, flex on lg */}
             <Link href="/dashboard">
               <Button variant="ghost">Dashboard</Button>
             </Link>
             <Link href="/#pricing">
               <Button variant="ghost">Pricing</Button>
             </Link>
-            {/* Add Sign In / User button */}
             <SignedIn>
-              {/* Mount the UserButton component */}
               <UserButton afterSignOutUrl="/" />
             </SignedIn>
             <SignedOut>
-              {/* Signed out users get sign in button */}
-              <SignInButton mode="modal" />
+              <SignInButton mode="modal">
+                <Button variant="ghost">Sign In</Button>
+              </SignInButton>
             </SignedOut>
           </nav>
+
+          {/* Mobile Buttons (Sign In / Dashboard) and Hamburger Toggle */}
+          <div className="lg:hidden"> {/* Wrapper for mobile toggle, removed flex and space-x-2 */}
+            {/* Hamburger Menu Toggle */}
+            <HamburgerToggle isOpen={isMobileMenuOpen} toggleMenu={toggleMobileMenu} />
+          </div>
         </div>
       </header>
+      <MobileMenu isOpen={isMobileMenuOpen} toggleMenu={toggleMobileMenu} isDashboard={false} />
 
       {/* Hero Section */}
       <main className="flex-1">
