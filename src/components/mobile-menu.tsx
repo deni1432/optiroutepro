@@ -3,22 +3,29 @@
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
-import { UserButton, SignedIn, SignedOut, SignInButton } from '@clerk/nextjs';
-import { X } from 'lucide-react'; // For a close button inside the menu
+import { SignedIn, SignedOut, SignInButton, useUser } from '@clerk/nextjs';
+import { X } from 'lucide-react';
+
+import { Route, Settings } from 'lucide-react';
 
 interface MobileMenuProps {
   isOpen: boolean;
   toggleMenu: () => void;
-  isDashboard: boolean; // To conditionally render dashboard-specific items
+  // isDashboard prop removed
 }
 
-export default function MobileMenu({ isOpen, toggleMenu, isDashboard }: MobileMenuProps) {
+export default function MobileMenu({ isOpen, toggleMenu }: MobileMenuProps) {
   const menuVariants = {
     hidden: { x: '100%' },
     visible: { x: 0 },
   };
 
   const linkProps = "block py-3 px-4 text-lg hover:bg-accent";
+  // dashboardLinkProps will now use linkProps styling, but with flex for icon alignment
+  const dashboardLinkStyle = `${linkProps} flex items-center`;
+
+  const { user, isSignedIn, isLoaded } = useUser();
+  const hasActiveSubscription = isLoaded && isSignedIn ? user?.publicMetadata?.hasActiveSubscription === true : false;
 
   return (
     <AnimatePresence>
@@ -29,12 +36,12 @@ export default function MobileMenu({ isOpen, toggleMenu, isDashboard }: MobileMe
           animate="visible"
           exit="hidden"
           transition={{ duration: 0.3, ease: 'easeInOut' }}
-          className="fixed inset-0 z-40 bg-background/95 backdrop-blur-sm lg:hidden"
-          onClick={toggleMenu} // Close menu if overlay is clicked
+          className="fixed inset-0 z-[60] bg-background/95 backdrop-blur-sm lg:hidden" // Increased z-index
+          onClick={toggleMenu}
         >
           <motion.div
-            className="fixed top-0 right-0 h-full w-full max-w-xs bg-background shadow-xl flex flex-col"
-            onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside the menu
+            className="fixed top-0 right-0 h-full w-full max-w-xs bg-background shadow-xl flex flex-col z-[70]" // Ensure inner content is also high
+            onClick={(e) => e.stopPropagation()}
           >
             <div className="flex justify-end p-4">
               <Button variant="ghost" size="icon" onClick={toggleMenu} aria-label="Close menu">
@@ -42,41 +49,35 @@ export default function MobileMenu({ isOpen, toggleMenu, isDashboard }: MobileMe
               </Button>
             </div>
             <nav className="flex-grow py-4">
-              {/* Always show Dashboard and Pricing links for now */}
+              {/* Standard Navigation Links */}
               <Link href="/dashboard" className={linkProps} onClick={toggleMenu}>
                 Dashboard
               </Link>
               <Link href="/pricing" className={linkProps} onClick={toggleMenu}>
                 Pricing
               </Link>
+
+              {/* Dashboard Specific Links (Visible for SignedIn users with active subscription) */}
+              {isSignedIn && hasActiveSubscription && (
+                <>
+                  <div className="border-t my-4 mx-4" /> {/* Divider */}
+                  <h3 className="text-sm font-semibold text-muted-foreground px-4 mb-2">Dashboard</h3>
+                  {/* Links navigate to dashboard with query param */}
+                  <Link href="/dashboard?view=optimization" className={dashboardLinkStyle} onClick={toggleMenu}>
+                    <Route className="mr-2 h-5 w-5" /> {/* Adjusted icon size */}
+                    Route Optimization
+                  </Link>
+                  <Link href="/dashboard?view=account" className={dashboardLinkStyle} onClick={toggleMenu}>
+                    <Settings className="mr-2 h-5 w-5" /> {/* Adjusted icon size */}
+                    Account Settings
+                  </Link>
+                </>
+              )}
+
               {/* Common auth links/buttons */}
+              {/* This section now only contains SignInButton */}
               <div className="mt-auto p-4 border-t">
-                <SignedIn>
-                  {/* Make the entire row clickable to open UserButton modal */}
-                  {/* Use flex items-center and space-x-2 for layout */}
-                  {/* Make the entire row clickable to open UserButton modal */}
-                  {/* Use flex items-center and space-x-2 for layout */}
-                  <div
-                    className="flex items-center space-x-2 py-3 px-4 hover:bg-accent cursor-pointer" // Added space-x-2, hover effect, and cursor
-                    onClick={() => {
-                      // Find the UserButton element and trigger its click
-                      // Use a more specific selector if needed, but .cl-userButton is standard
-                      const userButton = document.querySelector('.cl-userButton');
-                      if (userButton instanceof HTMLElement) {
-                        userButton.click();
-                      }
-                      toggleMenu(); // Close the mobile menu after clicking
-                    }}
-                  >
-                    {/* UserButton on the left - Fine-tune vertical alignment */}
-                    {/* Add a small top margin to nudge the icon down */}
-                    <div className="flex items-center mt-0.5"> {/* Added mt-0.5 */}
-                      <UserButton afterSignOutUrl="/" appearance={{ elements: { userButtonAvatarBox: "w-6 h-6" } }} /> {/* Adjusted size */}
-                    </div>
-                    {/* Account text on the right - Ensure it's vertically centered */}
-                    <span className="flex items-center">Account</span> {/* Wrap text to ensure it's flex-aligned */}
-                  </div>
-                </SignedIn>
+                {/* Removed SignedIn block with UserButton */}
                 <SignedOut>
                   <SignInButton mode="modal">
                     <Button className="w-full">Sign In</Button>

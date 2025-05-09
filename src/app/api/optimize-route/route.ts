@@ -1,8 +1,36 @@
 import { NextResponse } from 'next/server';
+import { auth, clerkClient as getClerkClientInstance } from '@clerk/nextjs/server';
 
 // HERE API URLs
 const HERE_ROUTE_URL = 'https://router.hereapi.com/v8/routes';
 const HERE_SEQUENCE_URL = 'https://wse.ls.hereapi.com/2/findsequence.json'; // Waypoint Sequence Extension
+
+// --- Define Plan Limits ---
+const PLAN_LIMITS = {
+  // Pro Plan (with Trial)
+  'price_1RMkdoAEvm0dTvhJ2ZAeLPkj': { // NEW Pro Price ID
+    maxStops: 100,
+    maxOptimizations: 50,
+    name: 'Pro',
+    level: 1, // Keep levels for upgrade logic
+  },
+  // Unlimited Plan (with Trial)
+  'price_1RMkePAEvm0dTvhJro8NBlJF': { // NEW Unlimited Price ID
+    maxStops: Infinity,
+    maxOptimizations: Infinity,
+    name: 'Unlimited',
+    level: 2,
+  },
+};
+
+// No default "Free" plan anymore. If a user has no plan or an unrecognized one,
+// they effectively have no access to optimization, or we can define a base "no access" state.
+// For now, if planId isn't found, it will result in an error or no limits.
+// The DEFAULT_PLAN_ID and DEFAULT_LIMITS might need to be re-evaluated or removed
+// if there's no free tier at all.
+// Let's assume for now that if a planId is not in PLAN_LIMITS, they get 0 access.
+const NO_ACCESS_LIMITS = { maxStops: 0, maxOptimizations: 0, name: 'No Active Plan', level: -1 };
+// DEFAULT_PLAN_ID is no longer relevant in the same way.
 
 interface Waypoint {
   lat: number;
@@ -11,17 +39,21 @@ interface Waypoint {
 }
 
 export async function POST(request: Request) {
-  const hereApiKey = process.env.HERE_API_KEY;
+  // --- 1. Authentication ---
+  const authResult = await auth(); // Await the auth() call
+  const userId = authResult.userId; // Destructure userId from the result
+  if (!userId) {
+    return NextResponse.json({ error: 'Unauthorized. Please sign in.' }, { status: 401 });
+  }
 
+  const hereApiKey = process.env.HERE_API_KEY;
   if (!hereApiKey) {
     console.error('HERE_API_KEY is not configured.');
-    return NextResponse.json(
-      { error: 'Server configuration error: Missing API key.' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Server configuration error: Missing API key.' }, { status: 500 });
   }
 
   try {
+    // --- 2. Parse Request Body ---
     const body = await request.json();
     const { origin, destination, viaStops } = body as {
       origin: Waypoint;
@@ -29,6 +61,7 @@ export async function POST(request: Request) {
       viaStops?: Waypoint[];
     };
 
+    // --- 3. Input Validation (Basic) ---
     if (!origin || typeof origin.lat !== 'number' || typeof origin.lng !== 'number') {
       return NextResponse.json(
         { error: 'Invalid origin provided. It must be an object with lat and lng numbers.' },
@@ -60,9 +93,85 @@ export async function POST(request: Request) {
       }
     }
     
-        // --- Step 1: Find the optimal sequence of waypoints ---
-        // The Waypoint Sequence Extension expects 'start', 'destinationN', and 'end' parameters.
-        // 'destinationN' are the intermediate stops to be optimized.
+    // --- 4. Fetch User Metadata & Determine Limits ---
+    const clerkClient = await getClerkClientInstance();
+    let user;
+    try {
+       user = await clerkClient.users.getUser(userId);
+    } catch (error) {
+       console.error(`[Optimize API] Failed to fetch Clerk user ${userId}:`, error);
+       return NextResponse.json({ error: 'Failed to retrieve user data.' }, { status: 500 });
+    }
+
+    const userMetadata = user.publicMetadata || {};
+    // With no free plan and downgrades handled by support, activeFeaturesPlanId is less critical.
+    // stripePlanId becomes the source of truth for the current active (possibly trial) plan.
+    const currentStripePlanId = userMetadata.stripePlanId as string | undefined;
+    const planLimits = currentStripePlanId ? (PLAN_LIMITS[currentStripePlanId as keyof typeof PLAN_LIMITS] || NO_ACCESS_LIMITS) : NO_ACCESS_LIMITS;
+    const planName = planLimits.name;
+
+    let optimizationsUsedThisCycle = (userMetadata.optimizationsUsedThisCycle as number) || 0;
+    const subCycleStartDateFromMeta = userMetadata.subCycleStartDate as number | undefined; // Unix timestamp (seconds)
+
+    console.log(`[Optimize API] User: ${userId}, Plan: ${planName} (ID: ${currentStripePlanId || 'None'}), Metadata Cycle Start: ${subCycleStartDateFromMeta}, Used This Cycle: ${optimizationsUsedThisCycle}`);
+
+    // --- 5. Check Stop Limit ---
+    const totalStops = 2 + (viaStops?.length || 0); // Origin + Destination + Via Stops
+    if (totalStops > planLimits.maxStops) {
+      console.log(`[Optimize API] User ${userId} exceeded stop limit. Requested: ${totalStops}, Limit: ${planLimits.maxStops}`);
+      return NextResponse.json(
+        { error: `Stop limit exceeded for your ${planName} plan. Maximum stops allowed: ${planLimits.maxStops}. You requested: ${totalStops}.` },
+        { status: 403 }
+      );
+    }
+
+    // --- 6. Check Optimization Limit (Cycle-Based) ---
+    if (planLimits.maxOptimizations !== Infinity) { // Only check if not unlimited
+       if (!subCycleStartDateFromMeta && planLimits.maxOptimizations !== Infinity) { // If no cycle start, and not unlimited plan
+           console.warn(`[Optimize API] User ${userId} has no subCycleStartDate in metadata. Assuming new cycle for safety if limits apply.`);
+           // If they have a plan but no cycle start, and it's not unlimited, this is an odd state.
+           // We could deny, or assume it's a fresh cycle. For now, let's assume fresh.
+           // This state should be corrected by webhooks.
+           if (optimizationsUsedThisCycle >= planLimits.maxOptimizations) {
+                return NextResponse.json(
+                   { error: `Optimization limit reached for your ${planName} plan. Cycle start unclear.` },
+                   { status: 403 }
+               );
+           }
+       } else if (planLimits.maxOptimizations !== Infinity) { // Only check if not unlimited and cycle start exists or assumed fresh
+            if (optimizationsUsedThisCycle >= planLimits.maxOptimizations) {
+               console.log(`[Optimize API] User ${userId} exceeded monthly optimization limit. Used: ${optimizationsUsedThisCycle}, Limit: ${planLimits.maxOptimizations}`);
+               return NextResponse.json(
+                   { error: `Optimization limit reached for your ${planName} plan this billing cycle. Limit: ${planLimits.maxOptimizations}. Please upgrade or wait for your next cycle.` },
+                   { status: 403 }
+               );
+           }
+       }
+    }
+
+    // --- 7. Increment Count & Update Metadata (BEFORE making expensive API call) ---
+    const newOptimizationsUsedThisCycle = optimizationsUsedThisCycle + 1;
+    try {
+      console.log(`[Optimize API] Updating metadata for user ${userId}: optimizationsUsedThisCycle=${newOptimizationsUsedThisCycle}`);
+      await clerkClient.users.updateUserMetadata(userId, {
+        publicMetadata: {
+          ...userMetadata, // Preserve existing metadata
+          optimizationsUsedThisCycle: newOptimizationsUsedThisCycle,
+          // subCycleStartDate is managed by webhooks
+        },
+      });
+    } catch (error) {
+      console.error(`[Optimize API] Failed to update Clerk metadata for user ${userId} AFTER usage check:`, error);
+      return NextResponse.json(
+        { error: 'Failed to update usage data. Please try again.' },
+        { status: 500 }
+      );
+    }
+
+    // --- 8. Proceed with HERE API Calls ---
+    console.log(`[Optimize API] User ${userId} passed checks. Proceeding with optimization. Stops: ${totalStops}. Optimization ${newOptimizationsUsedThisCycle}/${planLimits.maxOptimizations || 'Unlimited'} this cycle.`);
+
+    // --- Original Step 1: Find the optimal sequence of waypoints ---
         // We need to assign temporary IDs to map them back.
     
         const sequenceParams = new URLSearchParams({

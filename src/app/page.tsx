@@ -1,55 +1,18 @@
-'use client'; // Needs to be a client component to manage state for the menu
+'use client';
 
-import { useState } from 'react'; // Still needed for loadingPriceId
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { ArrowRight, MapPinned, Users, Gift } from 'lucide-react'; // MapPinned needed for Header import below? No, Header imports it.
-import { useUser } from '@clerk/nextjs'; // Keep useUser for handleSubscribe logic
-import Header from '@/components/header'; // Import the new Header component
-import PricingSection from '@/components/pricing-section'; // Import PricingSection
+import { ArrowRight, MapPinned, Users, Gift } from 'lucide-react';
+import Header from '@/components/header';
+import PricingSection from '@/components/pricing-section';
+import { useSubscriptionManager } from '@/lib/hooks/useSubscriptionManager'; // Import the custom hook
 
 export default function HomePage() {
-  // Mobile menu state is now managed within Header component
-  const [loadingPriceId, setLoadingPriceId] = useState<string | null>(null); // For loading state of subscribe buttons
-  const { isSignedIn, user, isLoaded } = useUser(); // Keep for handleSubscribe and potentially PricingSection props if needed
+  const { handleSubscribe, loadingPriceId } = useSubscriptionManager(); // Use the hook
 
-  // toggleMobileMenu is no longer needed here
-
-  const handleSubscribe = async (priceId: string) => {
-    if (!isSignedIn) {
-      // If not signed in, redirect to sign-in page with the priceId as a query parameter
-      window.location.href = `/sign-in?priceId=${priceId}`;
-      return; // Stop further execution
-    }
-
-    setLoadingPriceId(priceId);
-    try {
-      const response = await fetch('/api/create-checkout-session', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ priceId }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create checkout session');
-      }
-
-      const { sessionId, url } = await response.json();
-      if (url) {
-        window.location.href = url; // Redirect to Stripe Checkout
-      } else {
-        throw new Error('Checkout session URL not found.');
-      }
-    } catch (error) {
-      console.error('Subscription error:', error);
-      alert(`Error: ${(error as Error).message}`);
-    } finally {
-      setLoadingPriceId(null);
-    }
-  };
+  // The useUser() call is now inside useSubscriptionManager
+  // The useState and useEffect for stripePromise are also inside the hook
+  // The handleSubscribe function itself is now from the hook
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-950">

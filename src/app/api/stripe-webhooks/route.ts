@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
-// Removed: import { buffer } from 'micro';
-import { clerkClient as getClerkClientInstance } from '@clerk/nextjs/server'; // Import Clerk client
+import { clerkClient as getClerkClientInstance } from '@clerk/nextjs/server';
+
+type ClerkClientInstance = Awaited<ReturnType<typeof getClerkClientInstance>>;
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   typescript: true,
@@ -9,12 +10,64 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!;
 
-// Disable Next.js body parsing for this route, as Stripe requires the raw body for signature verification
 export const config = {
   api: {
     bodyParser: false,
   },
 };
+
+async function updateUserMetadata(clerkClient: ClerkClientInstance, userId: string, metadataUpdates: Record<string, any>) {
+  try {
+    const user = await clerkClient.users.getUser(userId);
+    const existingMetadata = user.publicMetadata || {};
+    
+    const finalPayloadForClerk: Record<string, any> = { ...existingMetadata };
+    for (const key in metadataUpdates) {
+       if (Object.prototype.hasOwnProperty.call(metadataUpdates, key)) {
+           if (metadataUpdates[key] === null) {
+               finalPayloadForClerk[key] = null; 
+           } else {
+               finalPayloadForClerk[key] = metadataUpdates[key];
+           }
+       }
+    }
+    // Ensure old fields are explicitly removed if they are not in metadataUpdates and we want them gone
+    if (!Object.prototype.hasOwnProperty.call(metadataUpdates, 'activeFeaturesPlanId')) {
+        finalPayloadForClerk['activeFeaturesPlanId'] = null;
+    }
+    if (!Object.prototype.hasOwnProperty.call(metadataUpdates, 'subscriptionDowngradeScheduledAt')) {
+        finalPayloadForClerk['subscriptionDowngradeScheduledAt'] = null;
+    }
+     if (!Object.prototype.hasOwnProperty.call(metadataUpdates, 'pendingPaymentClientSecret')) {
+        finalPayloadForClerk['pendingPaymentClientSecret'] = null;
+    }
+    if (!Object.prototype.hasOwnProperty.call(metadataUpdates, 'pendingPaymentIntentId')) {
+        finalPayloadForClerk['pendingPaymentIntentId'] = null;
+    }
+    if (!Object.prototype.hasOwnProperty.call(metadataUpdates, 'pendingInvoiceId')) {
+        finalPayloadForClerk['pendingInvoiceId'] = null;
+    }
+
+
+    console.log(`[WEBHOOK] Attempting updateUserMetadata for user ${userId} with payload:`, { publicMetadata: finalPayloadForClerk });
+    await clerkClient.users.updateUserMetadata(userId, {
+      publicMetadata: finalPayloadForClerk
+     });
+     console.log(`[WEBHOOK] Clerk API update call completed for user ${userId}.`);
+ 
+     try {
+        const updatedUser = await clerkClient.users.getUser(userId);
+        console.log(`[WEBHOOK] VERIFICATION FETCH for user ${userId}. Current publicMetadata:`, updatedUser.publicMetadata);
+     } catch (fetchError) {
+        console.error(`[WEBHOOK] Error fetching user ${userId} immediately after update:`, fetchError);
+     }
+ 
+     console.log(`[WEBHOOK] Finished processing metadata update for user ${userId}. Applied Updates (intent):`, metadataUpdates);
+   } catch (error) {
+     console.error(`[WEBHOOK] Error during metadata update or verification for user ${userId}:`, error);
+    throw new Error(`Failed to update Clerk metadata for user ${userId}`);
+  }
+}
 
 export async function POST(req: NextRequest) {
   if (req.method !== 'POST') {
@@ -22,11 +75,9 @@ export async function POST(req: NextRequest) {
   }
 
   const sig = req.headers.get('stripe-signature');
-  // Read the raw body from NextRequest
   const bodyBuffer = Buffer.from(await req.arrayBuffer());
 
   let event: Stripe.Event;
-
   try {
     event = stripe.webhooks.constructEvent(bodyBuffer, sig!, webhookSecret);
   } catch (err: any) {
@@ -34,140 +85,152 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Webhook Error: ${err.message}` }, { status: 400 });
   }
 
-  // Handle the event
-  console.log('[WEBHOOK] Received Stripe event:', event.type, event.data.object);
+  console.log('[WEBHOOK] Received Stripe event:', event.type, 'ID:', event.id);
+  
+  let clerkUserId: string | null = null;
+  const clerkClient = await getClerkClientInstance(); 
 
-  switch (event.type) {
-    case 'checkout.session.completed': { // Use block scope for variables
-      const session = event.data.object as Stripe.Checkout.Session;
-      console.log(`[WEBHOOK] CheckoutSession completed for ${session.id}, customer ${session.customer}`);
-      
-      if (session.customer && session.mode === 'subscription') {
-        const stripeCustomerId = session.customer as string;
-        console.log(`[WEBHOOK] Attempting to retrieve Stripe customer: ${stripeCustomerId}`);
-        try {
-          const customer = await stripe.customers.retrieve(stripeCustomerId);
-          // Check if customer is not deleted
-          if (customer && !customer.deleted) {
-            const clerkUserId = customer.metadata?.clerk_user_id;
-            console.log(`[WEBHOOK] Retrieved customer. Clerk User ID from metadata: ${clerkUserId}`);
-            if (clerkUserId) {
-              const clerkClient = await getClerkClientInstance();
-              const planId = session.line_items?.data[0]?.price?.id || null;
-              console.log(`[WEBHOOK] Attempting to update Clerk metadata for user: ${clerkUserId} with planId: ${planId}`);
-              await clerkClient.users.updateUserMetadata(clerkUserId, {
-                publicMetadata: {
-                  hasActiveSubscription: true,
-                  stripePlanId: planId,
-                  // You might also want to store stripeCustomerId here if not already done
-                  // stripeCustomerId: stripeCustomerId
-                }
-              });
-              console.log(`[WEBHOOK] Successfully updated Clerk metadata for user ${clerkUserId}: hasActiveSubscription = true, stripePlanId = ${planId}`);
-              // TODO: Save/update subscription data in your database here as well
-            } else {
-              console.error(`[WEBHOOK] Clerk User ID not found in Stripe customer metadata for customer ${stripeCustomerId}`);
+  try {
+    const stripeCustomerId = (event.data.object as any).customer as string | null;
+    if (stripeCustomerId) {
+        const customer = await stripe.customers.retrieve(stripeCustomerId);
+        if (customer && !customer.deleted && customer.metadata?.clerk_user_id) {
+            clerkUserId = customer.metadata.clerk_user_id;
+        } else if ((event.data.object as any).client_reference_id && (event.type === 'checkout.session.completed')) {
+            clerkUserId = (event.data.object as any).client_reference_id;
+            if (customer && !customer.deleted && !customer.metadata?.clerk_user_id && clerkUserId) {
+                console.log(`[WEBHOOK] Adding clerk_user_id ${clerkUserId} to Stripe customer ${stripeCustomerId} metadata.`);
+                await stripe.customers.update(stripeCustomerId, { metadata: { clerk_user_id: clerkUserId } });
             }
-          } else {
-             console.error(`[WEBHOOK] Stripe customer ${stripeCustomerId} not found or deleted.`);
-          }
-        } catch (error) {
-          console.error(`[WEBHOOK] Error retrieving Stripe customer or updating Clerk metadata:`, error);
         }
-      } else {
-        console.warn(`[WEBHOOK] Checkout session ${session.id} had no customer or was not a subscription.`);
-      }
-      break;
     }
-    case 'customer.subscription.updated': { // Use block scope
-      const subscriptionUpdated = event.data.object as Stripe.Subscription;
-      console.log(`[WEBHOOK] Subscription updated: ${subscriptionUpdated.id}, status ${subscriptionUpdated.status}`);
-      const stripeCustomerId = subscriptionUpdated.customer as string;
-      const isActive = ['active', 'trialing'].includes(subscriptionUpdated.status);
-      console.log(`[WEBHOOK] Attempting to retrieve Stripe customer for subscription update: ${stripeCustomerId}`);
-      
-      try {
-        const customer = await stripe.customers.retrieve(stripeCustomerId);
-        if (customer && !customer.deleted) {
-          const clerkUserId = customer.metadata?.clerk_user_id;
-          console.log(`[WEBHOOK] Retrieved customer for subscription update. Clerk User ID from metadata: ${clerkUserId}`);
-          if (clerkUserId) {
-            const clerkClient = await getClerkClientInstance();
-            const planId = subscriptionUpdated.items.data[0]?.price?.id || null;
-            console.log(`[WEBHOOK] Attempting to update Clerk metadata for user ${clerkUserId} on subscription update. isActive: ${isActive}, planId: ${planId}`);
-            await clerkClient.users.updateUserMetadata(clerkUserId, {
-              publicMetadata: {
-                hasActiveSubscription: isActive,
-                stripePlanId: planId,
-                // stripeSubscriptionStatus: subscriptionUpdated.status // Optionally store status
-              }
-            });
-            console.log(`[WEBHOOK] Successfully updated Clerk metadata for user ${clerkUserId}: hasActiveSubscription = ${isActive}, stripePlanId = ${planId}`);
-            // TODO: Update subscription status, plan, current_period_end in your database
-          } else {
-             console.error(`[WEBHOOK] Clerk User ID not found in Stripe customer metadata for customer ${stripeCustomerId}`);
-          }
-        } else {
-           console.error(`[WEBHOOK] Stripe customer ${stripeCustomerId} not found or deleted for subscription update.`);
-        }
-      } catch (error) {
-         console.error(`[WEBHOOK] Error retrieving Stripe customer or updating Clerk metadata for subscription update:`, error);
-      }
-      break;
-    }
-    case 'customer.subscription.deleted': { // Use block scope
-      const subscriptionDeleted = event.data.object as Stripe.Subscription;
-      console.log(`[WEBHOOK] Subscription deleted: ${subscriptionDeleted.id}`);
-      const stripeCustomerId = subscriptionDeleted.customer as string;
-      console.log(`[WEBHOOK] Attempting to retrieve Stripe customer for subscription deletion: ${stripeCustomerId}`);
 
-      try {
-        const customer = await stripe.customers.retrieve(stripeCustomerId);
-         if (customer && !customer.deleted) {
-          const clerkUserId = customer.metadata?.clerk_user_id;
-          console.log(`[WEBHOOK] Retrieved customer for subscription deletion. Clerk User ID from metadata: ${clerkUserId}`);
-          if (clerkUserId) {
-            const clerkClient = await getClerkClientInstance();
-            console.log(`[WEBHOOK] Attempting to update Clerk metadata for user ${clerkUserId} on subscription deletion.`);
-            await clerkClient.users.updateUserMetadata(clerkUserId, {
-              publicMetadata: {
-                hasActiveSubscription: false,
-                // Optionally clear the plan ID or set to a default 'free' plan ID if applicable
-                stripePlanId: null, // Clear the plan ID on deletion
-                // stripeSubscriptionStatus: 'canceled' // Optionally store status
-              }
-            });
-            console.log(`[WEBHOOK] Successfully updated Clerk metadata for user ${clerkUserId}: hasActiveSubscription = false, stripePlanId = null`);
-            // TODO: Update subscription status to 'canceled' or similar in your database
-          } else {
-             console.error(`[WEBHOOK] Clerk User ID not found in Stripe customer metadata for customer ${stripeCustomerId}`);
-          }
-        } else {
-           console.error(`[WEBHOOK] Stripe customer ${stripeCustomerId} not found or deleted for subscription deletion.`);
+    if (!clerkUserId && !['charge.succeeded', 'payment_intent.succeeded', 'payment_intent.created'].includes(event.type) ) {
+        const criticalEvents = ['customer.subscription.updated', 'customer.subscription.deleted', 'invoice.paid', 'invoice.payment_succeeded', 'checkout.session.completed'];
+        if (criticalEvents.includes(event.type)) {
+             console.error(`[WEBHOOK] CRITICAL: Clerk User ID missing for important event type ${event.type}, ID ${event.id}. Stripe Customer ID: ${stripeCustomerId}.`);
+             return NextResponse.json({ received: true, error: "Clerk User ID missing for critical event." });
         }
-      } catch (error) {
-         console.error(`[WEBHOOK] Error retrieving Stripe customer or updating Clerk metadata for subscription deletion:`, error);
+        console.warn(`[WEBHOOK] Could not determine Clerk User ID for event type ${event.type}, ID ${event.id}. Stripe Customer ID: ${stripeCustomerId}.`);
+    }
+
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        if (!clerkUserId) break; 
+        const session = event.data.object as Stripe.Checkout.Session;
+        const subscriptionId = (session as any).subscription as string | null;
+
+        if (session.customer && session.mode === 'subscription' && subscriptionId) {
+          const subscriptionObject = await stripe.subscriptions.retrieve(subscriptionId);
+          const planId = subscriptionObject.items.data[0]?.price?.id || null;
+          console.log(`[WEBHOOK] NEW subscription via Checkout. User: ${clerkUserId}, Plan: ${planId}, Status: ${subscriptionObject.status}`);
+          await updateUserMetadata(clerkClient, clerkUserId, {
+            hasActiveSubscription: ['active', 'trialing'].includes(subscriptionObject.status),
+            stripePlanId: planId,
+            stripeCustomerId: session.customer as string,
+            stripeSubscriptionId: subscriptionId,
+            subCycleStartDate: (subscriptionObject as any).current_period_start ?? Math.floor(Date.now() / 1000),
+            optimizationsUsedThisCycle: 0,
+          });
+        }
+        break;
       }
-      break;
+
+      case 'customer.subscription.updated': {
+        if (!clerkUserId) break;
+        const subscriptionObject = event.data.object as Stripe.Subscription;
+        console.log(`[WEBHOOK] Subscription updated: ${subscriptionObject.id}, Status: ${subscriptionObject.status}`);
+        
+        const user = await clerkClient.users.getUser(clerkUserId);
+        const existingMetadata = user.publicMetadata || {};
+        
+        const isActive = ['active', 'trialing'].includes(subscriptionObject.status);
+        const newStripePlanId = subscriptionObject.items.data[0]?.price?.id || null;
+        const newCycleStartDate = (subscriptionObject as any).current_period_start ?? Math.floor(Date.now() / 1000);
+        let optimizationsUsed = existingMetadata.optimizationsUsedThisCycle as number || 0;
+
+        // Reset usage if subscription is active and (plan changed OR cycle started anew)
+        if (isActive && (newStripePlanId !== existingMetadata.stripePlanId || newCycleStartDate !== existingMetadata.subCycleStartDate)) {
+          console.log(`[WEBHOOK] Subscription active and plan/cycle changed for user ${clerkUserId}. Resetting usage count.`);
+          optimizationsUsed = 0;
+        }
+
+        console.log(`[WEBHOOK] Updating Clerk metadata for subscription update. User: ${clerkUserId}, Plan: ${newStripePlanId}, isActive: ${isActive}`);
+        await updateUserMetadata(clerkClient, clerkUserId, {
+          hasActiveSubscription: isActive,
+          stripePlanId: newStripePlanId,
+          stripeSubscriptionId: subscriptionObject.id,
+          subCycleStartDate: newCycleStartDate,
+          optimizationsUsedThisCycle: optimizationsUsed,
+          stripeCancelAtPeriodEnd: subscriptionObject.cancel_at_period_end,
+        });
+        break;
+      }
+
+      case 'customer.subscription.deleted': {
+        if (!clerkUserId) break;
+        console.log(`[WEBHOOK] Updating Clerk metadata for user ${clerkUserId} on subscription deletion.`);
+        await updateUserMetadata(clerkClient, clerkUserId, {
+          hasActiveSubscription: false,
+          stripePlanId: null,
+          stripeSubscriptionId: null,
+          subCycleStartDate: null,
+          optimizationsUsedThisCycle: null, 
+          stripeCancelAtPeriodEnd: null,
+        });
+        break;
+      }
+      
+      case 'invoice.payment_action_required': {
+        // With hosted invoice redirect, this event is less likely to be the primary path for payment.
+        // However, if it occurs (e.g. SCA needed after payment method added on hosted page),
+        // we ensure the subscription is marked as not fully active.
+        if (!clerkUserId) break;
+        const invoice = event.data.object as Stripe.Invoice;
+        console.warn(`[WEBHOOK] Received invoice.payment_action_required for invoice ${invoice.id}. User ${clerkUserId}. Subscription may be past_due.`);
+        await updateUserMetadata(clerkClient, clerkUserId, { hasActiveSubscription: false });
+        break;
+      }
+
+      case 'invoice.paid':
+      case 'invoice.payment_succeeded': {
+        if (!clerkUserId) break;
+        const invoice = event.data.object as Stripe.Invoice;
+        const subscriptionIdFromInvoice = (invoice as any).subscription as string | null;
+        console.log(`[WEBHOOK] Invoice paid/succeeded: ${invoice.id}, Sub ID: ${subscriptionIdFromInvoice}, Billing Reason: ${invoice.billing_reason}`);
+
+        if (subscriptionIdFromInvoice) {
+          const subscriptionObject = await stripe.subscriptions.retrieve(subscriptionIdFromInvoice);
+          const currentPlanIdOnSub = subscriptionObject.items.data[0]?.price?.id || null;
+          console.log(`[WEBHOOK] Invoice paid for user ${clerkUserId}. Updating subscription to active, plan ${currentPlanIdOnSub}, resetting usage.`);
+          await updateUserMetadata(clerkClient, clerkUserId, {
+            hasActiveSubscription: true, // Subscription is now active
+            stripePlanId: currentPlanIdOnSub,
+            stripeSubscriptionId: subscriptionObject.id,
+            subCycleStartDate: (subscriptionObject as any).current_period_start ?? Math.floor(Date.now() / 1000),
+            optimizationsUsedThisCycle: 0, // Reset usage on successful payment for new/renewed cycle
+          });
+        } else {
+          console.log(`[WEBHOOK] Invoice paid/succeeded for ${invoice.id}, but no subscription ID found (e.g. one-time payment).`);
+        }
+        break;
+      }
+
+      case 'invoice.payment_failed': {
+        if (!clerkUserId) break;
+        const invoice = event.data.object as Stripe.Invoice;
+        console.log(`[WEBHOOK] Invoice payment failed: ${invoice.id}. User: ${clerkUserId}`);
+        // Mark subscription as inactive. customer.subscription.updated should also handle this.
+        await updateUserMetadata(clerkClient, clerkUserId, { hasActiveSubscription: false });
+        break;
+      }
+
+      default:
+        console.warn(`[WEBHOOK] Unhandled event type ${event.type}`);
     }
-    case 'invoice.payment_succeeded': { // Use block scope
-      const invoicePaymentSucceeded = event.data.object as Stripe.Invoice;
-      console.log(`[WEBHOOK] Invoice payment succeeded for ${invoicePaymentSucceeded.id}`);
-      // TODO: If needed, update subscription renewal date or confirm active status
-      break; // Added missing break statement
-    }
-    case 'invoice.payment_failed': { // Use block scope
-      const invoicePaymentFailed = event.data.object as Stripe.Invoice;
-      console.log(`[WEBHOOK] Invoice payment failed for ${invoicePaymentFailed.id}`);
-      // Potentially update Clerk metadata if payment failure means subscription is no longer active
-      // This might overlap with customer.subscription.updated events (e.g., status becomes 'past_due')
-      // TODO: Notify user, update subscription status in DB
-      break;
-    }
-    // ... handle other relevant event types
-    default:
-      console.warn(`[WEBHOOK] Unhandled event type ${event.type}`);
-  } // End of switch statement
+  } catch (error) {
+    console.error(`[WEBHOOK] Error processing event ${event.type} (ID: ${event.id}) for Clerk User ${clerkUserId || 'UNKNOWN'}:`, error);
+  }
 
   return NextResponse.json({ received: true });
 }

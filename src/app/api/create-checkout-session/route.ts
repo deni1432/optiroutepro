@@ -74,6 +74,9 @@ export async function POST(req: NextRequest) {
           quantity: 1,
         },
       ],
+      subscription_data: {
+        trial_period_days: 7, // Add 7-day trial
+      },
       success_url: `${APP_URL}/dashboard?session_id={CHECKOUT_SESSION_ID}`, // Redirect to dashboard on success
       cancel_url: `${APP_URL}/#pricing`, // Redirect to pricing page on cancellation
     });
