@@ -34,8 +34,8 @@ export async function POST(req: NextRequest) {
 
     // Option 2: Search Stripe for customer by metadata (if not found in DB or DB not yet integrated)
     const clerkClient = await getClerkClientInstance(); // Await here
-    const userForEmail: User = await clerkClient.users.getUser(clerkUserId); // Get user for email
-    const primaryEmail = userForEmail.emailAddresses.find(e => e.id === userForEmail.primaryEmailAddressId)?.emailAddress;
+    const user: User = await clerkClient.users.getUser(clerkUserId); // Get user for email and metadata
+    const primaryEmail = user.emailAddresses.find(e => e.id === user.primaryEmailAddressId)?.emailAddress;
     const customers = await stripe.customers.list({ email: primaryEmail });
     const existingCustomer = customers.data.find(c => c.metadata.clerk_user_id === clerkUserId);
 
@@ -43,9 +43,9 @@ export async function POST(req: NextRequest) {
       stripeCustomerId = existingCustomer.id;
     } else {
       // If no customer found, create one (this duplicates logic from create-stripe-customer, ideally call that or ensure it's run first)
-      // clerkUser is userForEmail here
+      // clerkUser is user here
       const email = primaryEmail; // Use the email already fetched
-      const name = `${userForEmail.firstName || ''} ${userForEmail.lastName || ''}`.trim();
+      const name = `${user.firstName || ''} ${user.lastName || ''}`.trim();
 
       if (!email) {
         return NextResponse.json({ error: 'User email not found for new Stripe customer' }, { status: 400 });
@@ -63,6 +63,20 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Stripe customer ID not found or could not be created.' }, { status: 500 });
     }
 
+    // Check if user has had a free trial
+    const userMetadata = user.publicMetadata || {};
+    const hasHadFreeTrial = userMetadata.hasHadFreeTrial === true;
+
+    // Define trial period, default to 7 days for this example
+    // In a real app, you might fetch plan details to see if it *offers* a trial
+    const PLAN_OFFERS_TRIAL = true; // Assume the selected plan offers a trial
+    const TRIAL_DAYS = 7;
+
+    const subscriptionData: Stripe.Checkout.SessionCreateParams.SubscriptionData = {};
+    if (PLAN_OFFERS_TRIAL && !hasHadFreeTrial) {
+      subscriptionData.trial_period_days = TRIAL_DAYS;
+    }
+
     // Create a Checkout Session
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
@@ -74,9 +88,7 @@ export async function POST(req: NextRequest) {
           quantity: 1,
         },
       ],
-      subscription_data: {
-        trial_period_days: 7, // Add 7-day trial
-      },
+      subscription_data: subscriptionData, // Use conditional trial data
       success_url: `${APP_URL}/dashboard?session_id={CHECKOUT_SESSION_ID}`, // Redirect to dashboard on success
       cancel_url: `${APP_URL}/#pricing`, // Redirect to pricing page on cancellation
     });

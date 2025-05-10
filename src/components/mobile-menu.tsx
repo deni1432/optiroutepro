@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
-import { SignedIn, SignedOut, SignInButton, useUser } from '@clerk/nextjs';
+import { UserButton, SignedIn, SignedOut, SignInButton, useUser } from '@clerk/nextjs'; // Re-import UserButton
 import { X } from 'lucide-react';
 
 import { Route, Settings } from 'lucide-react';
@@ -75,9 +75,13 @@ export default function MobileMenu({ isOpen, toggleMenu }: MobileMenuProps) {
               )}
 
               {/* Common auth links/buttons */}
-              {/* This section now only contains SignInButton */}
               <div className="mt-auto p-4 border-t">
-                {/* Removed SignedIn block with UserButton */}
+                <SignedIn>
+                  {/* UserButton added back for signed-in users, wrapped for visibility */}
+                  <div className="p-2"> {/* Added padding for visibility */}
+                    <UserButton afterSignOutUrl="/" />
+                  </div>
+                </SignedIn>
                 <SignedOut>
                   <SignInButton mode="modal">
                     <Button className="w-full">Sign In</Button>

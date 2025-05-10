@@ -21,33 +21,24 @@ async function updateUserMetadata(clerkClient: ClerkClientInstance, userId: stri
     const user = await clerkClient.users.getUser(userId);
     const existingMetadata = user.publicMetadata || {};
     
-    const finalPayloadForClerk: Record<string, any> = { ...existingMetadata };
-    for (const key in metadataUpdates) {
-       if (Object.prototype.hasOwnProperty.call(metadataUpdates, key)) {
-           if (metadataUpdates[key] === null) {
-               finalPayloadForClerk[key] = null; 
-           } else {
-               finalPayloadForClerk[key] = metadataUpdates[key];
-           }
-       }
-    }
-    // Ensure old fields are explicitly removed if they are not in metadataUpdates and we want them gone
-    if (!Object.prototype.hasOwnProperty.call(metadataUpdates, 'activeFeaturesPlanId')) {
-        finalPayloadForClerk['activeFeaturesPlanId'] = null;
-    }
-    if (!Object.prototype.hasOwnProperty.call(metadataUpdates, 'subscriptionDowngradeScheduledAt')) {
-        finalPayloadForClerk['subscriptionDowngradeScheduledAt'] = null;
-    }
-     if (!Object.prototype.hasOwnProperty.call(metadataUpdates, 'pendingPaymentClientSecret')) {
-        finalPayloadForClerk['pendingPaymentClientSecret'] = null;
-    }
-    if (!Object.prototype.hasOwnProperty.call(metadataUpdates, 'pendingPaymentIntentId')) {
-        finalPayloadForClerk['pendingPaymentIntentId'] = null;
-    }
-    if (!Object.prototype.hasOwnProperty.call(metadataUpdates, 'pendingInvoiceId')) {
-        finalPayloadForClerk['pendingInvoiceId'] = null;
-    }
+    // Start with existing metadata, then overwrite with specific updates.
+    // The `metadataUpdates` should contain all necessary fields for the current state.
+    // If a field needs to be removed, it should be explicitly set to `null` in `metadataUpdates`.
+    const finalPayloadForClerk: Record<string, any> = { 
+      ...existingMetadata, 
+      ...metadataUpdates 
+    };
 
+    // If hasActiveSubscription is false, ensure related subscription fields are nulled out
+    // unless explicitly provided in metadataUpdates (e.g. stripeCancelAtPeriodEnd).
+    if (metadataUpdates.hasActiveSubscription === false) {
+      finalPayloadForClerk.stripePlanId = metadataUpdates.stripePlanId === undefined ? null : metadataUpdates.stripePlanId;
+      finalPayloadForClerk.stripeSubscriptionId = metadataUpdates.stripeSubscriptionId === undefined ? null : metadataUpdates.stripeSubscriptionId;
+      finalPayloadForClerk.subCycleStartDate = metadataUpdates.subCycleStartDate === undefined ? null : metadataUpdates.subCycleStartDate;
+      finalPayloadForClerk.optimizationsUsedThisCycle = metadataUpdates.optimizationsUsedThisCycle === undefined ? null : metadataUpdates.optimizationsUsedThisCycle;
+      // stripeCancelAtPeriodEnd might still be relevant if cancellation is at period end
+      finalPayloadForClerk.stripeCancelAtPeriodEnd = metadataUpdates.stripeCancelAtPeriodEnd === undefined ? null : metadataUpdates.stripeCancelAtPeriodEnd;
+    }
 
     console.log(`[WEBHOOK] Attempting updateUserMetadata for user ${userId} with payload:`, { publicMetadata: finalPayloadForClerk });
     await clerkClient.users.updateUserMetadata(userId, {
@@ -124,14 +115,26 @@ export async function POST(req: NextRequest) {
           const subscriptionObject = await stripe.subscriptions.retrieve(subscriptionId);
           const planId = subscriptionObject.items.data[0]?.price?.id || null;
           console.log(`[WEBHOOK] NEW subscription via Checkout. User: ${clerkUserId}, Plan: ${planId}, Status: ${subscriptionObject.status}`);
-          await updateUserMetadata(clerkClient, clerkUserId, {
+          
+          const metadataToUpdate: Record<string, any> = {
             hasActiveSubscription: ['active', 'trialing'].includes(subscriptionObject.status),
             stripePlanId: planId,
             stripeCustomerId: session.customer as string,
             stripeSubscriptionId: subscriptionId,
             subCycleStartDate: (subscriptionObject as any).current_period_start ?? Math.floor(Date.now() / 1000),
             optimizationsUsedThisCycle: 0,
-          });
+          };
+
+          // Check if the subscription was a trial
+          const isTrialing = subscriptionObject.status === 'trialing' ||
+                             (subscriptionObject.trial_end && subscriptionObject.trial_end * 1000 > Date.now());
+
+          if (isTrialing) {
+            console.log(`[WEBHOOK] Subscription ${subscriptionId} for user ${clerkUserId} is a trial. Setting hasHadFreeTrial to true.`);
+            metadataToUpdate.hasHadFreeTrial = true;
+          }
+
+          await updateUserMetadata(clerkClient, clerkUserId, metadataToUpdate);
         }
         break;
       }
@@ -139,10 +142,11 @@ export async function POST(req: NextRequest) {
       case 'customer.subscription.updated': {
         if (!clerkUserId) break;
         const subscriptionObject = event.data.object as Stripe.Subscription;
-        console.log(`[WEBHOOK] Subscription updated: ${subscriptionObject.id}, Status: ${subscriptionObject.status}`);
+        console.log(`[WEBHOOK] customer.subscription.updated: Incoming subscriptionObject from Stripe:`, JSON.stringify(subscriptionObject, null, 2));
         
         const user = await clerkClient.users.getUser(clerkUserId);
         const existingMetadata = user.publicMetadata || {};
+        console.log(`[WEBHOOK] customer.subscription.updated: Existing Clerk metadata for user ${clerkUserId}:`, JSON.stringify(existingMetadata, null, 2));
         
         const isActive = ['active', 'trialing'].includes(subscriptionObject.status);
         const newStripePlanId = subscriptionObject.items.data[0]?.price?.id || null;
@@ -155,15 +159,30 @@ export async function POST(req: NextRequest) {
           optimizationsUsed = 0;
         }
 
-        console.log(`[WEBHOOK] Updating Clerk metadata for subscription update. User: ${clerkUserId}, Plan: ${newStripePlanId}, isActive: ${isActive}`);
-        await updateUserMetadata(clerkClient, clerkUserId, {
+        const metadataToUpdate: Record<string, any> = {
           hasActiveSubscription: isActive,
           stripePlanId: newStripePlanId,
           stripeSubscriptionId: subscriptionObject.id,
           subCycleStartDate: newCycleStartDate,
           optimizationsUsedThisCycle: optimizationsUsed,
           stripeCancelAtPeriodEnd: subscriptionObject.cancel_at_period_end,
-        });
+        };
+
+        // Preserve or set hasHadFreeTrial
+        if (existingMetadata.hasHadFreeTrial === true) {
+          metadataToUpdate.hasHadFreeTrial = true;
+          console.log(`[WEBHOOK] User ${clerkUserId} already had a free trial. Preserving hasHadFreeTrial flag.`);
+        } else {
+          const isTrialing = subscriptionObject.status === 'trialing' ||
+                             (subscriptionObject.trial_end && subscriptionObject.trial_end * 1000 > Date.now());
+          if (isTrialing) {
+            console.log(`[WEBHOOK] Updated subscription ${subscriptionObject.id} for user ${clerkUserId} is a trial. Setting hasHadFreeTrial to true.`);
+            metadataToUpdate.hasHadFreeTrial = true;
+          }
+        }
+
+        console.log(`[WEBHOOK] customer.subscription.updated: Constructed metadataToUpdate for user ${clerkUserId}:`, JSON.stringify(metadataToUpdate, null, 2));
+        await updateUserMetadata(clerkClient, clerkUserId, metadataToUpdate); // updateUserMetadata already logs the final payload and verification
         break;
       }
 

@@ -10,7 +10,7 @@ import { Progress } from '@/components/ui/progress';
 // Define Plan Limits again (ideally shared from a common lib)
 const PLAN_LIMITS = {
   'price_1RMkdoAEvm0dTvhJ2ZAeLPkj': { maxStops: 100, maxOptimizations: 50, name: 'Pro', level: 1 },
-  'price_1RMkePAEvm0dTvhJro8NBlJF': { maxStops: Infinity, maxOptimizations: Infinity, name: 'Unlimited', level: 2 },
+  'price_1RMkePAEvm0dTvhJro8NBlJF': { maxStops: Infinity, maxOptimizations: Infinity, name: 'Unlimited', level: 2 }, // Corrected typo in Unlimited plan ID
 };
 const NO_ACCESS_LIMITS = { maxStops: 0, maxOptimizations: 0, name: 'No Active Plan', level: -1 };
 
@@ -25,6 +25,9 @@ export default function AccountSettings() {
   const [isLoadingPaymentMethod, setIsLoadingPaymentMethod] = useState(true);
   const [billingHistory, setBillingHistory] = useState<any[]>([]); // State for billing history
   const [isLoadingBillingHistory, setIsLoadingBillingHistory] = useState(true); // Loading state for billing history
+  // Removed showCancelConfirm state
+
+  // Removed useToast hook initialization
 
   if (!isLoaded || !isSignedIn) {
     return <div className="p-4">Loading account information...</div>;
@@ -57,11 +60,11 @@ export default function AccountSettings() {
         window.location.href = data.url;
       } else {
         console.error('Failed to create customer portal session:', data.error);
-        alert('Failed to open billing settings. Please try again.');
+        alert('Failed to open billing settings. Please try again.'); // Reverted to alert
       }
     } catch (error) {
       console.error('Error creating customer portal session:', error);
-      alert('An error occurred. Please try again.');
+      alert('An error occurred. Please try again.'); // Reverted to alert
     } finally {
       setIsPortalLoading(false);
     }
@@ -69,7 +72,8 @@ export default function AccountSettings() {
 
   // Function to handle subscription cancellation
   const handleCancelSubscription = async () => {
-    if (window.confirm('Are you sure you want to cancel your subscription? This action cannot be undone.')) {
+    console.log('Cancel Plan button clicked'); // Keep console log for debugging if needed
+    if (window.confirm('Are you sure you want to cancel your subscription? This action cannot be undone.')) { // Reverted to window.confirm
       setIsCanceling(true);
       try {
         const response = await fetch('/api/cancel-subscription', {
@@ -77,17 +81,17 @@ export default function AccountSettings() {
         });
         const data = await response.json();
         if (response.ok) {
-          alert('Subscription canceled successfully.');
+          alert('Subscription canceled successfully.'); // Reverted to alert
           // Clerk webhook should update metadata, but a slight delay is possible.
           // Consider refreshing user data here if needed for immediate UI update.
           // user.reload();
         } else {
           console.error('Failed to cancel subscription:', data.error);
-          alert(`Failed to cancel subscription: ${data.error}`);
+          alert(`Failed to cancel subscription: ${data.error}`); // Reverted to alert
         }
       } catch (error) {
         console.error('Error canceling subscription:', error);
-        alert('An error occurred while canceling. Please try again.');
+        alert('An error occurred while canceling. Please try again.'); // Reverted to alert
       } finally {
         setIsCanceling(false);
       }
@@ -171,36 +175,31 @@ export default function AccountSettings() {
                </span>
             )}
           </CardTitle>
-          <div className="flex items-center space-x-2">
-             {/* Link to Pricing Page for Change Plan */}
-             <Button variant="outline" size="sm" asChild>
-                <Link href="/pricing">Change Plan</Link>
-             </Button>
-             {/* Cancel Plan Button (requires API endpoint) */}
-             {currentStripePlanId && planLimits.level > 0 && ( // Only show cancel for paid plans
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={handleCancelSubscription}
-                  disabled={isCanceling}
-                >
-                   {isCanceling ? 'Canceling...' : 'Cancel Plan'}
-                </Button>
-             )}
-             {/* Billing Settings Button (requires API endpoint for Customer Portal) */}
-             {currentStripePlanId && ( // Only show billing settings if they have a plan
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleManageBilling}
-                  disabled={isPortalLoading}
-                >
-                   {isPortalLoading ? 'Loading...' : <><Settings className="mr-2 h-4 w-4" /> Billing Settings</>}
-                </Button>
-             )}
-          </div>
+          {/* Buttons moved to CardContent */}
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Button container in CardContent - Billing Settings button removed */}
+          {currentStripePlanId && ( // Only show buttons if they have a plan
+            <div className="flex flex-row items-center space-x-2 mb-4"> {/* Changed to flex-row for all screen sizes */}
+               {/* Link to Pricing Page for Change Plan */}
+               <Button variant="outline" size="sm" asChild>
+                  <Link href="/pricing">Change Plan</Link>
+               </Button>
+               {/* Cancel Plan Button (requires API endpoint) */}
+               {planLimits.level > 0 && ( // Only show cancel for paid plans
+                 <Button // Reverted to standard button, not DialogTrigger
+                   variant="destructive"
+                   size="sm"
+                   onClick={handleCancelSubscription} // Reverted to direct click handler
+                   disabled={isCanceling}
+                 >
+                    {isCanceling ? 'Canceling...' : 'Cancel Plan'}
+                 </Button>
+               )}
+               {/* Billing Settings Button removed from here */}
+            </div>
+          )}
+
           {currentStripePlanId ? (
             <>
               {renewalDate && <p className="text-muted-foreground text-sm">Renews on {renewalDate.toLocaleDateString()}</p>}
@@ -216,29 +215,44 @@ export default function AccountSettings() {
                 </div>
               )}
               {/* Add other limits here if applicable */}
+              
             </>
           ) : (
              <p className="text-muted-foreground">You do not have an active plan. <Link href="/pricing" className="text-primary hover:underline">Choose a plan</Link> to get started.</p>
           )}
         </CardContent>
       </Card>
-
       {/* Payment Method Card */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-2xl font-semibold">Payment Method</CardTitle>
-           {currentStripePlanId && ( // Only show update button if they have a plan
-             <Button
-               variant="outline"
-               size="sm"
-               onClick={handleManageBilling} // Use the same handler for updating payment method
-               disabled={isPortalLoading}
-             >
-                {isPortalLoading ? 'Loading...' : 'Update Payment Method'}
-             </Button>
-           )}
+          {/* Buttons moved to CardContent */}
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4"> {/* Added space-y-4 for consistency */}
+          {/* Button container in CardContent */}
+          {currentStripePlanId && ( // Only show buttons if they have a plan
+            <div className="flex flex-row items-center space-x-2 mb-4"> {/* Flex row with spacing and bottom margin */}
+              {/* Billing Settings Button moved here */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleManageBilling}
+                disabled={isPortalLoading}
+              >
+                 {isPortalLoading ? 'Loading...' : <><Settings className="mr-2 h-4 w-4" /> Billing Settings</>}
+              </Button>
+              {/* Update Payment Method Button */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleManageBilling} // Use the same handler for updating payment method
+                disabled={isPortalLoading}
+              >
+                 {isPortalLoading ? 'Loading...' : 'Update Payment Method'}
+              </Button>
+            </div>
+          )}
+
           {isLoadingPaymentMethod ? (
             <p className="text-muted-foreground">Loading payment method...</p>
           ) : paymentMethod ? (

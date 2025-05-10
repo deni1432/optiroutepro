@@ -9,29 +9,91 @@ interface PricingSectionProps {
   loadingPriceId: string | null;
 }
 
-const PRO_PLAN_PRICE_ID = 'price_1RMkdoAEvm0dTvhJ2ZAeLPkj';
-const UNLIMITED_PLAN_PRICE_ID = 'price_1RMkePAEvm0dTvhJro8NBlJF';
+// Plan details including levels for comparison
+const PLANS = {
+  PRO: {
+    id: 'price_1RMkdoAEvm0dTvhJ2ZAeLPkj',
+    name: 'Pro',
+    level: 1,
+    trialText: "Start Pro Trial",
+    chooseText: "Choose Pro"
+  },
+  UNLIMITED: {
+    id: 'price_1RMkePAEvm0dTvhJro8NBlJF', // Corrected typo in Unlimited plan ID
+    name: 'Unlimited',
+    level: 2,
+    trialText: "Start Unlimited Trial",
+    chooseText: "Choose Unlimited"
+  },
+};
+
+// Helper to get plan details from PLAN_LIMITS or a similar structure
+const PLAN_LEVELS: Record<string, number> = {
+  [PLANS.PRO.id]: PLANS.PRO.level,
+  [PLANS.UNLIMITED.id]: PLANS.UNLIMITED.level,
+};
 
 export default function PricingSection({ handleSubscribe, loadingPriceId }: PricingSectionProps) {
   const { isSignedIn, user, isLoaded } = useUser();
-  const currentPlanId = isLoaded && isSignedIn ? user?.publicMetadata?.stripePlanId as string | undefined : undefined;
-  const isTrialing = isLoaded && isSignedIn ? user?.publicMetadata?.hasActiveSubscription === true && (user?.publicMetadata as any)?.stripeSubscriptionStatus === 'trialing' : false; // A bit verbose, might simplify if sub status is directly in metadata
+
+  const userMetadata = isLoaded && isSignedIn ? user?.publicMetadata : {};
+  const currentPlanId = userMetadata?.stripePlanId as string | undefined;
+  const hasActiveSubscription = userMetadata?.hasActiveSubscription === true;
+  const hasHadFreeTrial = userMetadata?.hasHadFreeTrial === true;
+  // const isTrialing = hasActiveSubscription && userMetadata?.stripeSubscriptionStatus === 'trialing'; // Assuming stripeSubscriptionStatus is in metadata
+  // For simplicity, we'll rely on hasActiveSubscription, currentPlanId, and hasHadFreeTrial for now.
+
+  const currentUserPlanLevel = currentPlanId ? PLAN_LEVELS[currentPlanId] ?? -1 : -1;
+
+  const getButtonTextAndAction = (planKey: 'PRO' | 'UNLIMITED') => {
+    const plan = PLANS[planKey];
+    if (!isLoaded) return { text: 'Loading...', disabled: true, action: () => {} };
+    if (loadingPriceId === plan.id) return { text: 'Processing...', disabled: true, action: () => {} };
+
+    if (!hasActiveSubscription || !currentPlanId) {
+      // If user has had a free trial before, show "Choose" instead of "Start Trial"
+      const buttonText = hasHadFreeTrial ? plan.chooseText : plan.trialText;
+      return { text: buttonText, disabled: false, action: () => handleSubscribe(plan.id) };
+    }
+
+    if (currentPlanId === plan.id) {
+      return { text: 'Current Plan', disabled: true, action: () => {} }; // Or link to manage
+    }
+
+    if (plan.level > currentUserPlanLevel) {
+      return { text: `Upgrade to ${plan.name}`, disabled: false, action: () => handleSubscribe(plan.id) };
+    }
+
+    if (plan.level < currentUserPlanLevel) {
+      return { text: `Downgrade to ${plan.name}`, disabled: false, action: () => handleSubscribe(plan.id) };
+    }
+
+    // Fallback, should ideally not be reached if logic is complete
+    return { text: `Switch to ${plan.name}`, disabled: false, action: () => handleSubscribe(plan.id) };
+  };
+
+  const proButton = getButtonTextAndAction('PRO');
+  const unlimitedButton = getButtonTextAndAction('UNLIMITED');
 
   return (
     <section id="pricing" className="py-16 bg-slate-50 dark:bg-slate-900">
       <div className="container mx-auto px-4 md:px-6 text-center">
         <h2 className="text-3xl sm:text-4xl font-bold mb-4">Choose Your OptiRoutePro Plan</h2>
         <p className="text-muted-foreground mb-12 max-w-xl mx-auto">
-          Start with a 7-day free trial on any plan. Cancel anytime.
+          {hasHadFreeTrial
+            ? "Choose your plan and get started today. Cancel anytime."
+            : "Start with a 7-day free trial on any plan. Cancel anytime."}
         </p>
         <div className="grid gap-8 md:grid-cols-1 lg:grid-cols-2 max-w-3xl mx-auto">
           {/* Pro Tier Card */}
-          <div className={`border rounded-lg p-8 shadow-lg flex flex-col justify-between ${currentPlanId === PRO_PLAN_PRICE_ID ? 'border-primary border-2' : 'border-border'}`}>
+          <div className={`border rounded-lg p-8 shadow-lg flex flex-col justify-between ${currentPlanId === PLANS.PRO.id ? 'border-primary border-2' : 'border-border'}`}>
             <div>
-              <h3 className="text-2xl font-semibold mb-1">Pro</h3>
-              <p className="text-sm text-primary font-medium mb-2 flex items-center justify-center">
-                <CheckCircle className="w-4 h-4 mr-1" /> 7-Day Free Trial
-              </p>
+              <h3 className="text-2xl font-semibold mb-1">{PLANS.PRO.name}</h3>
+              {!hasHadFreeTrial && (
+                <p className="text-sm text-primary font-medium mb-2 flex items-center justify-center">
+                  <CheckCircle className="w-4 h-4 mr-1" /> 7-Day Free Trial
+                </p>
+              )}
               <p className="text-4xl font-bold mb-4">$14.99<span className="text-lg font-normal text-muted-foreground">/mo</span></p>
               <ul className="space-y-2 text-muted-foreground mb-6 text-left">
                 <li>✓ Up to 50 optimizations per month</li>
@@ -42,21 +104,23 @@ export default function PricingSection({ handleSubscribe, loadingPriceId }: Pric
             </div>
             <Button
              className="w-full mt-4"
-             variant={currentPlanId === PRO_PLAN_PRICE_ID ? "default" : "outline"}
-             onClick={() => handleSubscribe(PRO_PLAN_PRICE_ID)}
-             disabled={loadingPriceId === PRO_PLAN_PRICE_ID || (isLoaded && currentPlanId === PRO_PLAN_PRICE_ID && !isTrialing)}
+             variant={currentPlanId === PLANS.PRO.id ? "default" : "outline"}
+             onClick={proButton.action}
+             disabled={proButton.disabled}
             >
-             {isLoaded && currentPlanId === PRO_PLAN_PRICE_ID ? (isTrialing ? 'Extend Trial / Subscribe' : 'Current Plan') : (loadingPriceId === PRO_PLAN_PRICE_ID ? 'Processing...' : 'Start Pro Trial')}
+             {proButton.text}
             </Button>
           </div>
-          
+
           {/* Unlimited Tier Card */}
-          <div className={`border rounded-lg p-8 shadow-lg flex flex-col justify-between ${currentPlanId === UNLIMITED_PLAN_PRICE_ID ? 'border-primary border-2' : 'border-border'}`}>
+          <div className={`border rounded-lg p-8 shadow-lg flex flex-col justify-between ${currentPlanId === PLANS.UNLIMITED.id ? 'border-primary border-2' : 'border-border'}`}>
             <div>
-              <h3 className="text-2xl font-semibold mb-1">Unlimited</h3>
-               <p className="text-sm text-primary font-medium mb-2 flex items-center justify-center">
-                <CheckCircle className="w-4 h-4 mr-1" /> 7-Day Free Trial
-              </p>
+              <h3 className="text-2xl font-semibold mb-1">{PLANS.UNLIMITED.name}</h3>
+               {!hasHadFreeTrial && (
+                <p className="text-sm text-primary font-medium mb-2 flex items-center justify-center">
+                  <CheckCircle className="w-4 h-4 mr-1" /> 7-Day Free Trial
+                </p>
+              )}
               <p className="text-4xl font-bold mb-4">$49.99<span className="text-lg font-normal text-muted-foreground">/mo</span></p>
               <ul className="space-y-2 text-muted-foreground mb-6 text-left">
                 <li>✓ All Pro features</li>
@@ -68,11 +132,11 @@ export default function PricingSection({ handleSubscribe, loadingPriceId }: Pric
             </div>
             <Button
               className="w-full mt-4"
-              variant={currentPlanId === UNLIMITED_PLAN_PRICE_ID ? "default" : "outline"}
-              onClick={() => handleSubscribe(UNLIMITED_PLAN_PRICE_ID)}
-              disabled={loadingPriceId === UNLIMITED_PLAN_PRICE_ID || (isLoaded && currentPlanId === UNLIMITED_PLAN_PRICE_ID && !isTrialing)}
+              variant={currentPlanId === PLANS.UNLIMITED.id ? "default" : "outline"}
+              onClick={unlimitedButton.action}
+              disabled={unlimitedButton.disabled}
             >
-              {isLoaded && currentPlanId === UNLIMITED_PLAN_PRICE_ID ? (isTrialing ? 'Extend Trial / Subscribe' : 'Current Plan') : (loadingPriceId === UNLIMITED_PLAN_PRICE_ID ? 'Processing...' : 'Start Unlimited Trial')}
+              {unlimitedButton.text}
             </Button>
           </div>
         </div>

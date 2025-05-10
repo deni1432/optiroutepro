@@ -54,7 +54,8 @@ export default function RouteForm({ onRouteOptimized }: RouteFormProps) {
   const [origin, setOrigin] = useState('');
   const [destination, setDestination] = useState(''); // New state for destination
   const [stops, setStops] = useState<Stop[]>([]); // Initialize with no via stops by default
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false); // For route optimization
+  const [isLocating, setIsLocating] = useState(false); // For geolocation/reverse geocoding
   const [error, setError] = useState<string | null>(null);
   // const [optimizedRouteData, setOptimizedRouteData] = useState<OptimizedRouteResponse | null>(null);
   // This state will now be managed by the parent (DashboardPage)
@@ -203,20 +204,89 @@ export default function RouteForm({ onRouteOptimized }: RouteFormProps) {
       </CardHeader>
       <form onSubmit={handleSubmit}>
         <CardContent className="space-y-6">
-          {/* Origin Input */}
+          {/* Origin Input with Geolocation Button */}
           <div>
             <label htmlFor="origin" className="block text-sm font-medium text-foreground mb-1">
               Origin
             </label>
-            <Input
-              id="origin"
-              type="text"
-              placeholder="Enter starting address"
-              value={origin}
-              onChange={(e) => setOrigin(e.target.value)}
-              required
-              className="w-full"
-            />
+            <div className="flex flex-col space-y-2"> {/* Changed to flex-col with space-y-2 */}
+              <Input
+                id="origin"
+                type="text" // Corrected: Ensure only one type="text"
+                placeholder="Enter starting address"
+                value={origin}
+                onChange={(e) => setOrigin(e.target.value)}
+                required
+                className="w-full" // Input takes full width of flex container
+              />
+              {/* Use Current Location Button */}
+              <Button
+                type="button"
+                variant="outline"
+                // Removed size="icon"
+                onClick={() => {
+                  if (navigator.geolocation) {
+                    setIsLocating(true); // Indicate locating
+                    setError(null); // Clear previous errors
+                    navigator.geolocation.getCurrentPosition(
+                      async (position) => { // Use async here
+                        const { latitude, longitude } = position.coords;
+                        
+                        try {
+                          // Call the new reverse geocoding API
+                          const response = await fetch('/api/reverse-geocode', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ lat: latitude, lng: longitude }),
+                          });
+                          const data = await response.json();
+
+                          if (response.ok && data.address) {
+                            setOrigin(data.address); // Set input value to the address
+                          } else {
+                            console.error('Reverse geocoding failed:', data.error || data.message);
+                            setError(data.error || 'Failed to get address for your location.');
+                            // Optionally set coordinates if address not found but location obtained
+                            // setOrigin(`${latitude},${longitude}`);
+                          }
+                        } catch (reverseGeocodeError) {
+                          console.error('Reverse geocoding fetch error:', reverseGeocodeError);
+                          setError('Network error during reverse geocoding.');
+                          // Optionally set coordinates on network error
+                          // setOrigin(`${latitude},${longitude}`);
+                        } finally {
+                          setIsLocating(false); // End locating
+                        }
+                      },
+                      (error) => {
+                        console.error('Geolocation error:', error);
+                        setError('Unable to retrieve your location.');
+                        setIsLocating(false); // End locating
+                      }
+                    );
+                  } else {
+                    setError('Geolocation is not supported by your browser.');
+                  }
+                }}
+                aria-label="Use current location"
+                disabled={isLocating || isLoading} // Disable while locating or optimizing
+              >
+                {isLocating ? (
+                   <span className="flex items-center"> {/* Wrap content in a span for flex */}
+                      <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"> {/* Adjusted margin */}
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Locating...
+                   </span>
+                ) : (
+                  <span className="flex items-center"> {/* Wrap content in a span for flex */}
+                    <MapPin className="mr-2 h-5 w-5" /> {/* Added margin */}
+                    Use my current location
+                  </span>
+                )}
+              </Button>
+            </div>
           </div>
 
           {/* Via Stops Section */}
