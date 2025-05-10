@@ -10,23 +10,23 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!;
 
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
+// This is the correct way to disable body parsing in Next.js App Router
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+export const preferredRegion = 'auto';
+export const maxDuration = 60; // Maximum duration in seconds (adjust as needed)
 
 async function updateUserMetadata(clerkClient: ClerkClientInstance, userId: string, metadataUpdates: Record<string, any>) {
   try {
     const user = await clerkClient.users.getUser(userId);
     const existingMetadata = user.publicMetadata || {};
-    
+
     // Start with existing metadata, then overwrite with specific updates.
     // The `metadataUpdates` should contain all necessary fields for the current state.
     // If a field needs to be removed, it should be explicitly set to `null` in `metadataUpdates`.
-    const finalPayloadForClerk: Record<string, any> = { 
-      ...existingMetadata, 
-      ...metadataUpdates 
+    const finalPayloadForClerk: Record<string, any> = {
+      ...existingMetadata,
+      ...metadataUpdates
     };
 
     // If hasActiveSubscription is false, ensure related subscription fields are nulled out
@@ -45,14 +45,14 @@ async function updateUserMetadata(clerkClient: ClerkClientInstance, userId: stri
       publicMetadata: finalPayloadForClerk
      });
      console.log(`[WEBHOOK] Clerk API update call completed for user ${userId}.`);
- 
+
      try {
         const updatedUser = await clerkClient.users.getUser(userId);
         console.log(`[WEBHOOK] VERIFICATION FETCH for user ${userId}. Current publicMetadata:`, updatedUser.publicMetadata);
      } catch (fetchError) {
         console.error(`[WEBHOOK] Error fetching user ${userId} immediately after update:`, fetchError);
      }
- 
+
      console.log(`[WEBHOOK] Finished processing metadata update for user ${userId}. Applied Updates (intent):`, metadataUpdates);
    } catch (error) {
      console.error(`[WEBHOOK] Error during metadata update or verification for user ${userId}:`, error);
@@ -61,28 +61,33 @@ async function updateUserMetadata(clerkClient: ClerkClientInstance, userId: stri
 }
 
 export async function POST(req: NextRequest) {
-  if (req.method !== 'POST') {
-    return NextResponse.json({ error: 'Method Not Allowed' }, { status: 405 });
-  }
-
-  const sig = req.headers.get('stripe-signature');
-  const bodyBuffer = Buffer.from(await req.arrayBuffer());
-
-  let event: Stripe.Event;
-  try {
-    event = stripe.webhooks.constructEvent(bodyBuffer, sig!, webhookSecret);
-  } catch (err: any) {
-    console.error(`[WEBHOOK] Webhook signature verification failed: ${err.message}`);
-    return NextResponse.json({ error: `Webhook Error: ${err.message}` }, { status: 400 });
-  }
-
-  console.log('[WEBHOOK] Received Stripe event:', event.type, 'ID:', event.id);
-  
-  let clerkUserId: string | null = null;
-  const clerkClient = await getClerkClientInstance(); 
+  // No need to check req.method in App Router as this function only handles POST
 
   try {
-    const stripeCustomerId = (event.data.object as any).customer as string | null;
+    const sig = req.headers.get('stripe-signature');
+    if (!sig) {
+      console.error('[WEBHOOK] Missing Stripe signature');
+      return NextResponse.json({ error: 'Missing Stripe signature' }, { status: 400 });
+    }
+
+    // Get the raw request body
+    const bodyBuffer = Buffer.from(await req.arrayBuffer());
+
+    let event: Stripe.Event;
+    try {
+      event = stripe.webhooks.constructEvent(bodyBuffer, sig, webhookSecret);
+    } catch (err: any) {
+      console.error(`[WEBHOOK] Webhook signature verification failed: ${err.message}`);
+      return NextResponse.json({ error: `Webhook Error: ${err.message}` }, { status: 400 });
+    }
+
+    console.log('[WEBHOOK] Received Stripe event:', event.type, 'ID:', event.id);
+
+    let clerkUserId: string | null = null;
+    const clerkClient = await getClerkClientInstance();
+
+    try {
+      const stripeCustomerId = (event.data.object as any).customer as string | null;
     if (stripeCustomerId) {
         const customer = await stripe.customers.retrieve(stripeCustomerId);
         if (customer && !customer.deleted && customer.metadata?.clerk_user_id) {
@@ -107,7 +112,7 @@ export async function POST(req: NextRequest) {
 
     switch (event.type) {
       case 'checkout.session.completed': {
-        if (!clerkUserId) break; 
+        if (!clerkUserId) break;
         const session = event.data.object as Stripe.Checkout.Session;
         const subscriptionId = (session as any).subscription as string | null;
 
@@ -115,7 +120,7 @@ export async function POST(req: NextRequest) {
           const subscriptionObject = await stripe.subscriptions.retrieve(subscriptionId);
           const planId = subscriptionObject.items.data[0]?.price?.id || null;
           console.log(`[WEBHOOK] NEW subscription via Checkout. User: ${clerkUserId}, Plan: ${planId}, Status: ${subscriptionObject.status}`);
-          
+
           const metadataToUpdate: Record<string, any> = {
             hasActiveSubscription: ['active', 'trialing'].includes(subscriptionObject.status),
             stripePlanId: planId,
@@ -143,11 +148,11 @@ export async function POST(req: NextRequest) {
         if (!clerkUserId) break;
         const subscriptionObject = event.data.object as Stripe.Subscription;
         console.log(`[WEBHOOK] customer.subscription.updated: Incoming subscriptionObject from Stripe:`, JSON.stringify(subscriptionObject, null, 2));
-        
+
         const user = await clerkClient.users.getUser(clerkUserId);
         const existingMetadata = user.publicMetadata || {};
         console.log(`[WEBHOOK] customer.subscription.updated: Existing Clerk metadata for user ${clerkUserId}:`, JSON.stringify(existingMetadata, null, 2));
-        
+
         const isActive = ['active', 'trialing'].includes(subscriptionObject.status);
         const newStripePlanId = subscriptionObject.items.data[0]?.price?.id || null;
         const newCycleStartDate = (subscriptionObject as any).current_period_start ?? Math.floor(Date.now() / 1000);
@@ -194,12 +199,12 @@ export async function POST(req: NextRequest) {
           stripePlanId: null,
           stripeSubscriptionId: null,
           subCycleStartDate: null,
-          optimizationsUsedThisCycle: null, 
+          optimizationsUsedThisCycle: null,
           stripeCancelAtPeriodEnd: null,
         });
         break;
       }
-      
+
       case 'invoice.payment_action_required': {
         // With hosted invoice redirect, this event is less likely to be the primary path for payment.
         // However, if it occurs (e.g. SCA needed after payment method added on hosted page),
@@ -247,9 +252,13 @@ export async function POST(req: NextRequest) {
       default:
         console.warn(`[WEBHOOK] Unhandled event type ${event.type}`);
     }
-  } catch (error) {
-    console.error(`[WEBHOOK] Error processing event ${event.type} (ID: ${event.id}) for Clerk User ${clerkUserId || 'UNKNOWN'}:`, error);
-  }
+    } catch (error) {
+      console.error(`[WEBHOOK] Error processing event ${event.type} (ID: ${event.id}) for Clerk User ${clerkUserId || 'UNKNOWN'}:`, error);
+    }
 
-  return NextResponse.json({ received: true });
+    return NextResponse.json({ received: true });
+  } catch (error) {
+    console.error('[WEBHOOK] Unexpected error in webhook handler:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
 }

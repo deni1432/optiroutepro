@@ -21,6 +21,11 @@ const isPublicRoute = createRouteMatcher([
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
+  // Special handling for Stripe webhooks - bypass Clerk completely
+  if (req.nextUrl.pathname.startsWith('/api/stripe-webhooks')) {
+    return NextResponse.next();
+  }
+
   // If it's a public route, do nothing (allow access)
   if (isPublicRoute(req)) {
     return NextResponse.next();
