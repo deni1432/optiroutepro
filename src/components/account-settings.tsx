@@ -9,7 +9,7 @@ import { Progress } from '@/components/ui/progress';
 
 // Define Plan Limits again (ideally shared from a common lib)
 const PLAN_LIMITS = {
-  'price_1RMkdoAEvm0dTvhJ2ZAeLPkj': { maxStops: 100, maxOptimizations: 50, name: 'Pro', level: 1 },
+  'price_1RMkdoAEvm0dTvhJ2ZAeLPkj': { maxStops: 55, maxOptimizations: 30, name: 'Pro', level: 1 },
   'price_1RMkePAEvm0dTvhJro8NBlJF': { maxStops: Infinity, maxOptimizations: Infinity, name: 'Unlimited', level: 2 }, // Corrected typo in Unlimited plan ID
 };
 const NO_ACCESS_LIMITS = { maxStops: 0, maxOptimizations: 0, name: 'No Active Plan', level: -1 };
@@ -215,7 +215,7 @@ export default function AccountSettings() {
                 </div>
               )}
               {/* Add other limits here if applicable */}
-              
+
             </>
           ) : (
              <p className="text-muted-foreground">You do not have an active plan. <Link href="/pricing" className="text-primary hover:underline">Choose a plan</Link> to get started.</p>

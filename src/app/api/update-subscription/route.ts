@@ -5,7 +5,7 @@ import { auth, clerkClient as getClerkClientInstance } from '@clerk/nextjs/serve
 // Updated Plan Limits - Pro and Unlimited ONLY
 const PLAN_LIMITS_WITH_LEVELS = {
   // Pro Plan ($14.99/month, 7-day trial)
-  'price_1RMkdoAEvm0dTvhJ2ZAeLPkj': { name: 'Pro', level: 1, maxOptimizations: 50, maxStops: 100 },
+  'price_1RMkdoAEvm0dTvhJ2ZAeLPkj': { name: 'Pro', level: 1, maxOptimizations: 30, maxStops: 55 },
   // Unlimited Plan ($49.99/month, 7-day trial)
   'price_1RMkePAEvm0dTvhJro8NBlJF': { name: 'Unlimited', level: 2, maxOptimizations: Infinity, maxStops: Infinity },
 };
@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
         console.log(`[Update Sub API] User ${userId} attempted to downgrade to ${newPriceId}. Downgrades are handled via support.`);
         return NextResponse.json({ error: 'Downgrades are handled via support. Please contact us to change your plan.' }, { status: 403 });
     }
-    
+
     // Only Upgrades are processed by this API now
     console.log(`[Update Sub API] Processing upgrade for user ${userId}. Proration: create_prorations`);
 
@@ -75,21 +75,21 @@ export async function POST(req: NextRequest) {
     if (!currentItem) {
         return NextResponse.json({ error: 'Subscription item not found.' }, { status: 404 });
     }
-    
+
     const updatedSubscription = await stripe.subscriptions.update(stripeSubscriptionId, {
       items: [{
         id: currentItem.id,
         price: newPriceId,
       }],
       proration_behavior: 'create_prorations',
-      payment_behavior: 'default_incomplete', 
+      payment_behavior: 'default_incomplete',
       cancel_at_period_end: false,
     });
 
     console.log(`[Update Sub API] Successfully requested subscription update for ${updatedSubscription.id}. Current status: ${updatedSubscription.status}`);
-    
+
     // Update Clerk metadata: set new stripePlanId, nullify old downgrade/feature fields
-    await clerkClient.users.updateUserMetadata(userId, { 
+    await clerkClient.users.updateUserMetadata(userId, {
         publicMetadata: {
             ...userMetadata,
             stripePlanId: newPriceId,
@@ -125,19 +125,19 @@ export async function POST(req: NextRequest) {
             }
         }
     }
-    
+
     let successMessage = `Subscription successfully updated to ${newPlanDetails.name}.`;
     if (updatedSubscription.status === 'past_due' || updatedSubscription.status === 'incomplete') {
         successMessage = `Subscription update to ${newPlanDetails.name} initiated. Status: ${updatedSubscription.status}. Payment may be required.`;
     }
 
     console.log(`[Update Sub API] Reached default response for subscription ${updatedSubscription.id}. Status: ${updatedSubscription.status}`);
-    return NextResponse.json({ 
-        success: true, 
+    return NextResponse.json({
+        success: true,
         subscriptionId: updatedSubscription.id,
         newPlanId: newPriceId,
         subscriptionStatus: updatedSubscription.status,
-        requiresRedirectToInvoice: false, 
+        requiresRedirectToInvoice: false,
         message: successMessage
     });
 

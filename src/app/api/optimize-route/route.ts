@@ -9,8 +9,8 @@ const HERE_SEQUENCE_URL = 'https://wse.ls.hereapi.com/2/findsequence.json'; // W
 const PLAN_LIMITS = {
   // Pro Plan (with Trial)
   'price_1RMkdoAEvm0dTvhJ2ZAeLPkj': { // NEW Pro Price ID
-    maxStops: 100,
-    maxOptimizations: 50,
+    maxStops: 55,
+    maxOptimizations: 30,
     name: 'Pro',
     level: 1, // Keep levels for upgrade logic
   },
@@ -92,7 +92,7 @@ export async function POST(request: Request) {
         }
       }
     }
-    
+
     // --- 4. Fetch User Metadata & Determine Limits ---
     const clerkClient = await getClerkClientInstance();
     let user;
@@ -173,24 +173,24 @@ export async function POST(request: Request) {
 
     // --- Original Step 1: Find the optimal sequence of waypoints ---
         // We need to assign temporary IDs to map them back.
-    
+
         const sequenceParams = new URLSearchParams({
           start: `${origin.id};${origin.lat},${origin.lng}`, // id;lat,lng
           end: `${destination.id};${destination.lat},${destination.lng}`, // id;lat,lng
           mode: 'fastest;car', // Mode for sequencing
           apiKey: hereApiKey,
         });
-    
+
         (viaStops || []).forEach((stop, index) => {
           // Ensure via stops also have an ID for mapping back
           const stopId = stop.id || `via-${index}`;
           sequenceParams.append(`destination${index + 1}`, `${stopId};${stop.lat},${stop.lng}`);
         });
-        
+
         console.log('Calling HERE FindSequence with params:', sequenceParams.toString());
         const sequenceResponse = await fetch(`${HERE_SEQUENCE_URL}?${sequenceParams.toString()}`);
         const sequenceData = await sequenceResponse.json();
-    
+
         if (!sequenceResponse.ok || !sequenceData.results || sequenceData.results.length === 0 || !sequenceData.results[0].waypoints) {
           console.error('HERE FindSequence API Error:', sequenceData);
           return NextResponse.json(
@@ -201,7 +201,7 @@ export async function POST(request: Request) {
             { status: sequenceResponse.status || 500 }
           );
         }
-    
+
         const optimizedWaypoints = sequenceData.results[0].waypoints as Array<{
           id: string;
           lat: number;
@@ -211,17 +211,17 @@ export async function POST(request: Request) {
           estimatedDeparture: string | null;
           // ... other properties
         }>;
-    
+
         // Sort waypoints by the optimized sequence
         optimizedWaypoints.sort((a, b) => a.sequence - b.sequence);
-        
+
         // The sorted optimizedWaypoints now contains origin, all via stops in optimal order, and destination.
         // The first one is origin, last one is destination.
         const finalOrigin = optimizedWaypoints[0];
         const finalDestination = optimizedWaypoints[optimizedWaypoints.length - 1];
         const finalViaStops = optimizedWaypoints.slice(1, -1);
-    
-    
+
+
         // --- Step 2: Get the detailed route for the optimized sequence ---
         const routeParams = new URLSearchParams({
           origin: `${finalOrigin.lat},${finalOrigin.lng}`,
@@ -232,13 +232,13 @@ export async function POST(request: Request) {
           departureTime: 'any',
           apiKey: hereApiKey,
         });
-    
+
         if (finalViaStops.length > 0) {
           finalViaStops.forEach(wp => {
             routeParams.append('via', `${wp.lat},${wp.lng}`);
           });
         }
-        
+
         console.log('Calling HERE Routes with params:', routeParams.toString());
         const routeResponse = await fetch(`${HERE_ROUTE_URL}?${routeParams.toString()}`);
         const routeData = await routeResponse.json();
@@ -254,7 +254,7 @@ export async function POST(request: Request) {
             { status: routeResponse.status || 500 }
           );
         }
-        
+
         const route = routeData.routes[0];
         // route.summary is not present at the top level for multi-section routes.
         // The total summary is calculated below by summing section summaries.
@@ -263,13 +263,13 @@ export async function POST(request: Request) {
         // We need to associate the original input (e.g., address string, original ID from form)
         // with each point in optimizedWaypoints.
         // The `id` field we passed to findsequence should be in `optimizedWaypoints[i].id`.
-        
+
         const sections = route.sections.map((section: any, sectionIndex: number) => {
           // The departure of section `i` corresponds to `optimizedWaypoints[i]`.
           // The arrival of section `i` corresponds to `optimizedWaypoints[i+1]`.
           const departureWaypoint = optimizedWaypoints[sectionIndex];
           const arrivalWaypoint = optimizedWaypoints[sectionIndex + 1];
-    
+
           return {
             departure: {
               place: section.departure.place, // This is HERE's place object
@@ -290,8 +290,8 @@ export async function POST(request: Request) {
             })),
           };
         });
-    
-    
+
+
         // Calculate total duration and length by summing section summaries
         const totalDuration = route.sections.reduce((sum: number, section: any) => sum + (section.summary?.duration || 0), 0);
         const totalLength = route.sections.reduce((sum: number, section: any) => sum + (section.summary?.length || 0), 0);
@@ -310,7 +310,7 @@ export async function POST(request: Request) {
           totalDuration: totalDuration, // Use calculated total duration
           totalLength: totalLength,   // Use calculated total length
         });
-    
+
       } catch (error) {
     console.error('Route Optimization API Error:', error);
     let errorMessage = 'An unexpected error occurred during route optimization.';

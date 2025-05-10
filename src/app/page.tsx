@@ -97,7 +97,7 @@ export default function HomePage() {
               <div className="border rounded-lg p-6 shadow-sm">
                 <h3 className="text-xl font-semibold mb-3">What's the difference between Pro and Unlimited plans?</h3>
                 <p className="text-muted-foreground">
-                  The Pro plan allows up to 50 optimizations per month with a maximum of 100 stops per route.
+                  The Pro plan allows up to 30 optimizations per month with a maximum of 55 stops per route.
                   The Unlimited plan offers unlimited optimizations and stops per route, plus priority support and API access (coming soon).
                 </p>
               </div>

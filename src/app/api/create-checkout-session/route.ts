@@ -89,6 +89,7 @@ export async function POST(req: NextRequest) {
         },
       ],
       subscription_data: subscriptionData, // Use conditional trial data
+      allow_promotion_codes: true, // Enable promotional codes
       success_url: `${APP_URL}/dashboard?session_id={CHECKOUT_SESSION_ID}`, // Redirect to dashboard on success
       cancel_url: `${APP_URL}/#pricing`, // Redirect to pricing page on cancellation
     });

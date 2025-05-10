@@ -96,8 +96,8 @@ export default function PricingSection({ handleSubscribe, loadingPriceId }: Pric
               )}
               <p className="text-4xl font-bold mb-4">$14.99<span className="text-lg font-normal text-muted-foreground">/mo</span></p>
               <ul className="space-y-2 text-muted-foreground mb-6 text-left">
-                <li>✓ Up to 50 optimizations per month</li>
-                <li>✓ Up to 100 stops per route</li>
+                <li>✓ Up to 30 optimizations per month</li>
+                <li>✓ Up to 55 stops per route</li>
                 <li>✓ Export full routes with one click</li>
                 <li>✓ Standard support</li>
               </ul>
