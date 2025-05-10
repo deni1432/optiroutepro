@@ -5,9 +5,9 @@ import { auth, clerkClient as getClerkClientInstance } from '@clerk/nextjs/serve
 // Updated Plan Limits - Pro and Unlimited ONLY
 const PLAN_LIMITS_WITH_LEVELS = {
   // Pro Plan ($14.99/month, 7-day trial)
-  'price_1RMkdoAEvm0dTvhJ2ZAeLPkj': { name: 'Pro', level: 1, maxOptimizations: 30, maxStops: 55 },
+  'price_1RN9boAEvm0dTvhJHLti8iOs': { name: 'Pro', level: 1, maxOptimizations: 30, maxStops: 55 },
   // Unlimited Plan ($49.99/month, 7-day trial)
-  'price_1RMkePAEvm0dTvhJro8NBlJF': { name: 'Unlimited', level: 2, maxOptimizations: Infinity, maxStops: Infinity },
+  'price_1RN9cCAEvm0dTvhJuebJbEMe': { name: 'Unlimited', level: 2, maxOptimizations: Infinity, maxStops: Infinity },
 };
 // No DEFAULT_PLAN_ID_FOR_LEVELS as users must be on a trial or paid plan.
 

@@ -12,14 +12,14 @@ interface PricingSectionProps {
 // Plan details including levels for comparison
 const PLANS = {
   PRO: {
-    id: 'price_1RMkdoAEvm0dTvhJ2ZAeLPkj',
+    id: 'price_1RN9boAEvm0dTvhJHLti8iOs',
     name: 'Pro',
     level: 1,
     trialText: "Start Pro Trial",
     chooseText: "Choose Pro"
   },
   UNLIMITED: {
-    id: 'price_1RMkePAEvm0dTvhJro8NBlJF', // Corrected typo in Unlimited plan ID
+    id: 'price_1RN9cCAEvm0dTvhJuebJbEMe',
     name: 'Unlimited',
     level: 2,
     trialText: "Start Unlimited Trial",

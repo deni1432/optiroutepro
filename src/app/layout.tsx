@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from '@clerk/nextjs'
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner"; // Import Toaster
+import CookieConsent from "@/components/cookie-consent";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -32,6 +33,7 @@ export default function RootLayout({
         >
           {children}
           <Toaster /> {/* Add Toaster component */}
+          <CookieConsent /> {/* Add Cookie Consent banner */}
         </body>
       </html>
     </ClerkProvider>

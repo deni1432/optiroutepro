@@ -11,6 +11,7 @@ import dynamic from 'next/dynamic';
 import DashboardSidebar from '@/components/dashboard-sidebar';
 import AccountSettings from '@/components/account-settings';
 import SharedNavbar from '@/components/shared-navbar';
+import SharedFooter from '@/components/shared-footer';
 
 
 // Dynamically import the map component to ensure it only loads on the client side
@@ -198,10 +199,8 @@ function DashboardContent() {
       </div>
 
 
-      {/* Footer (optional for dashboard) */}
-      <footer className="py-6 text-center text-sm text-muted-foreground border-t">
-        OptiRoutePro &copy; {new Date().getFullYear()}
-      </footer>
+      {/* Footer */}
+      <SharedFooter />
     </div>
   );
 }

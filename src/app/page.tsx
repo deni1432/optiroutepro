@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { ArrowRight, MapPinned, Users, Gift, Mail } from 'lucide-react';
 import SharedNavbar from '@/components/shared-navbar';
+import SharedFooter from '@/components/shared-footer';
 import PricingSection from '@/components/pricing-section';
 import { useSubscriptionManager } from '@/lib/hooks/useSubscriptionManager'; // Import the custom hook
 
@@ -144,15 +145,7 @@ export default function HomePage() {
       </main>
 
       {/* Footer */}
-      <footer className="py-8 border-t">
-        <div className="container mx-auto px-4 md:px-6 flex flex-col md:flex-row items-center justify-between">
-          <p className="text-sm text-muted-foreground">&copy; {new Date().getFullYear()} OptiRoutePro. All rights reserved.</p>
-          <nav className="flex gap-4 mt-4 md:mt-0">
-            <Link href="/terms" className="text-sm hover:underline">Terms of Service</Link>
-            <Link href="/privacy" className="text-sm hover:underline">Privacy Policy</Link>
-          </nav>
-        </div>
-      </footer>
+      <SharedFooter />
     </div>
   );
 }

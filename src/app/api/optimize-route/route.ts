@@ -8,14 +8,14 @@ const HERE_SEQUENCE_URL = 'https://wse.ls.hereapi.com/2/findsequence.json'; // W
 // --- Define Plan Limits ---
 const PLAN_LIMITS = {
   // Pro Plan (with Trial)
-  'price_1RMkdoAEvm0dTvhJ2ZAeLPkj': { // NEW Pro Price ID
+  'price_1RN9boAEvm0dTvhJHLti8iOs': { // Production Pro Price ID
     maxStops: 55,
     maxOptimizations: 30,
     name: 'Pro',
     level: 1, // Keep levels for upgrade logic
   },
   // Unlimited Plan (with Trial)
-  'price_1RMkePAEvm0dTvhJro8NBlJF': { // NEW Unlimited Price ID
+  'price_1RN9cCAEvm0dTvhJuebJbEMe': { // Production Unlimited Price ID
     maxStops: Infinity,
     maxOptimizations: Infinity,
     name: 'Unlimited',
