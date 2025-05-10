@@ -3,17 +3,12 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { MapPinned, Menu } from 'lucide-react';
+import { MapPinned } from 'lucide-react';
 import { UserButton, SignedIn, SignedOut, SignInButton, SignUpButton } from '@clerk/nextjs';
 import HamburgerToggle from '@/components/hamburger-toggle';
 import MobileMenu from '@/components/mobile-menu';
 
-// Optional: Add prop for current page to highlight active link if needed
-// interface HeaderProps {
-//   currentPage?: 'home' | 'dashboard' | 'pricing';
-// }
-
-export default function Header() {
+export default function SharedNavbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const toggleMobileMenu = () => {
@@ -29,7 +24,7 @@ export default function Header() {
             <span className="font-bold sm:inline-block">OptiRoutePro</span>
           </Link>
 
-          {/* Desktop Navigation */}
+          {/* Desktop Navigation - visible at 1024px (lg breakpoint) and above */}
           <nav className="hidden lg:flex items-center space-x-6">
             <Link href="/">
               <Button variant="ghost">Home</Button>
@@ -73,7 +68,7 @@ export default function Header() {
             </SignedOut>
           </div>
 
-          {/* Mobile Hamburger Toggle */}
+          {/* Mobile Hamburger Toggle - hidden on screens larger than lg (1024px) */}
           <div className="lg:hidden">
             <HamburgerToggle isOpen={isMobileMenuOpen} toggleMenu={toggleMobileMenu} />
           </div>

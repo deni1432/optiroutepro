@@ -30,7 +30,7 @@ export default function MobileDashboardSidebar({ activeView, onViewChange, isOpe
       {/* Overlay */}
       <div
         className={cn(
-          'fixed inset-0 bg-black/50 z-40 transition-opacity',
+          'fixed inset-0 bg-black/50 z-[100] transition-opacity',
           isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         )}
         onClick={onClose} // Close sidebar when clicking overlay
@@ -39,7 +39,7 @@ export default function MobileDashboardSidebar({ activeView, onViewChange, isOpe
       {/* Sidebar */}
       <div
         className={cn(
-          'fixed inset-y-0 left-0 w-64 bg-gray-100 dark:bg-gray-800 p-4 flex flex-col z-50 transform transition-transform',
+          'fixed inset-y-0 left-0 w-64 bg-gray-100 dark:bg-gray-800 p-4 flex flex-col z-[110] transform transition-transform',
           isOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
@@ -52,7 +52,7 @@ export default function MobileDashboardSidebar({ activeView, onViewChange, isOpe
         <nav className="flex flex-col space-y-2">
           <Button
             variant={activeView === 'optimization' ? 'secondary' : 'ghost'}
-            className="justify-start"
+            className="justify-start hover:bg-accent cursor-pointer transition-colors"
             onClick={() => { onViewChange('optimization'); onClose(); }} // Close on selection
           >
             <Route className="mr-2 h-4 w-4" />
@@ -60,7 +60,7 @@ export default function MobileDashboardSidebar({ activeView, onViewChange, isOpe
           </Button>
           <Button
             variant={activeView === 'account' ? 'secondary' : 'ghost'}
-            className="justify-start"
+            className="justify-start hover:bg-accent cursor-pointer transition-colors"
             onClick={() => { onViewChange('account'); onClose(); }} // Close on selection
           >
             <Settings className="mr-2 h-4 w-4" />

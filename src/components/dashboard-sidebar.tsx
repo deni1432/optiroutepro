@@ -16,7 +16,7 @@ export default function DashboardSidebar({ activeView, onViewChange }: Dashboard
       <nav className="flex flex-col space-y-2">
         <Button
           variant={activeView === 'optimization' ? 'secondary' : 'ghost'}
-          className="justify-start"
+          className="justify-start hover:bg-accent cursor-pointer transition-colors"
           onClick={() => onViewChange('optimization')}
         >
           <Route className="mr-2 h-4 w-4" />
@@ -24,7 +24,7 @@ export default function DashboardSidebar({ activeView, onViewChange }: Dashboard
         </Button>
         <Button
           variant={activeView === 'account' ? 'secondary' : 'ghost'}
-          className="justify-start"
+          className="justify-start hover:bg-accent cursor-pointer transition-colors"
           onClick={() => onViewChange('account')}
         >
           <Settings className="mr-2 h-4 w-4" />

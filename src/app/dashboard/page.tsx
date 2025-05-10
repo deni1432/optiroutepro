@@ -1,20 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useUser, SignedIn, SignedOut, SignInButton } from '@clerk/nextjs';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { MapPinned, Menu } from 'lucide-react'; // Import Menu icon
-import { UserButton } from '@clerk/nextjs'; // Re-import UserButton
-import { useSearchParams } from 'next/navigation'; // Import useSearchParams
+import { useSearchParams } from 'next/navigation';
 import RouteForm from '@/components/route-form';
 import OptimizedRouteList from '@/components/optimized-route-list';
-import HamburgerToggle from '@/components/hamburger-toggle';
 import dynamic from 'next/dynamic';
-import MobileMenu from '@/components/mobile-menu';
-import DashboardSidebar from '@/components/dashboard-sidebar'; // Import the sidebar
-import AccountSettings from '@/components/account-settings'; // Import the account settings component
-// Removed MobileDashboardSidebar import
+import DashboardSidebar from '@/components/dashboard-sidebar';
+import AccountSettings from '@/components/account-settings';
+import SharedNavbar from '@/components/shared-navbar';
 
 
 // Dynamically import the map component to ensure it only loads on the client side
@@ -50,14 +46,13 @@ interface OriginalPointData {
   value: string;
 }
 
-export default function DashboardPage() {
-  const { user, isSignedIn, isLoaded } = useUser();
+// Create a wrapper component that uses searchParams
+function DashboardContent() {
+  const { isSignedIn, isLoaded } = useUser();
   const [optimizedRouteData, setOptimizedRouteData] = useState<ApiOptimizedRouteResponse | null>(null);
   const [originalPoints, setOriginalPoints] = useState<OriginalPointData[]>([]);
   const [sortedOriginalAddresses, setSortedOriginalAddresses] = useState<string[]>([]);
   const [showRouteForm, setShowRouteForm] = useState(true);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // State for main mobile menu
-  // Removed isMobileSidebarOpen state
   const [activeView, setActiveView] = useState<'optimization' | 'account'>('optimization'); // State for active view
   const searchParams = useSearchParams(); // Hook to access search parameters
 
@@ -72,17 +67,20 @@ export default function DashboardPage() {
     // If no viewParam, it defaults to 'optimization' as per initial state
   }, [searchParams]); // Re-run when searchParams change
 
-  const toggleMobileMenu = () => {
-    setIsMobileMenuOpen(!isMobileMenuOpen);
-  };
-
   // Removed toggleMobileSidebar function
 
-  const handleNavigateStop = (waypointIndex: number) => {
+  const handleNavigateStop = (waypointIndex: number, address: string) => {
     if (optimizedRouteData && optimizedRouteData.optimizedWaypointDetails[waypointIndex]) {
       const waypoint = optimizedRouteData.optimizedWaypointDetails[waypointIndex];
-      console.log('Navigate to waypoint:', waypoint, 'Original Address:', sortedOriginalAddresses[waypointIndex]);
-      // TODO: Implement Navigation Modal
+      console.log('Navigate to waypoint:', waypoint, 'Original Address:', address);
+
+      // Get coordinates for the destination
+      const lat = waypoint.lat;
+      const lng = waypoint.lng;
+
+      // Open in the user's default maps app with the specific destination coordinates
+      // This will work on both iOS and Android
+      window.open(`https://maps.google.com/maps?q=${lat},${lng}`);
     }
   };
 
@@ -110,37 +108,8 @@ export default function DashboardPage() {
 
   return (
     <div className="flex flex-col min-h-screen">
-      {/* Dashboard Header */}
-      <header className="sticky top-0 z-40 w-full border-b bg-background">
-        <div className="container mx-auto flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
-          <Link href="/" className="flex items-center space-x-2">
-            <MapPinned className="h-6 w-6 text-primary" />
-            <span className="font-bold">OptiRoutePro Dashboard</span>
-          </Link>
-
-          {/* Desktop Navigation */}
-          <nav className="hidden lg:flex items-center space-x-4">
-            {user && <p className="text-sm text-muted-foreground">Welcome, {user.firstName || user.emailAddresses[0]?.emailAddress || 'User'}</p>}
-            <UserButton
-              afterSignOutUrl="/"
-              appearance={{
-                elements: {
-                  userButtonAvatarBox: "w-10 h-10",
-                  userButtonPopoverCard: "mt-2",
-                }
-              }}
-            />
-          </nav>
-
-         {/* Mobile Buttons (Sign In / Dashboard) and Hamburger Toggle */}
-         <div className="lg:hidden flex items-center space-x-2"> {/* Added flex and space-x-2 */}
-            {/* Only Main Mobile Menu Toggle remains */}
-            <HamburgerToggle isOpen={isMobileMenuOpen} toggleMenu={toggleMobileMenu} />
-         </div>
-       </div>
-      </header>
-     {/* Main Mobile Menu - Now includes dashboard links */}
-     <MobileMenu isOpen={isMobileMenuOpen} toggleMenu={toggleMobileMenu} /> {/* isDashboard prop removed */}
+      {/* Use the shared navbar component */}
+      <SharedNavbar />
 
      {/* Removed Mobile Dashboard Sidebar */}
 
@@ -234,5 +203,14 @@ export default function DashboardPage() {
         OptiRoutePro &copy; {new Date().getFullYear()}
       </footer>
     </div>
+  );
+}
+
+// Main component that wraps the content in a Suspense boundary
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading dashboard...</div>}>
+      <DashboardContent />
+    </Suspense>
   );
 }

@@ -1,8 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ListChecks, Navigation, Clock, Milestone } from 'lucide-react';
+import { ListChecks, Navigation, Clock, Milestone, CheckCircle } from 'lucide-react';
 
 // From HERE API (Place can be complex, simplified here)
 interface Place {
@@ -42,7 +43,7 @@ interface OptimizedRouteListProps {
     totalLength: number;
   } | null;
   originalAddresses: string[]; // Array of original address strings
-  onNavigateStop: (waypointIndex: number) => void;
+  onNavigateStop: (waypointIndex: number, address: string) => void;
 }
 
 const formatDuration = (totalSeconds: number): string => {
@@ -64,6 +65,9 @@ const formatDistance = (meters: number): string => {
 };
 
 export default function OptimizedRouteList({ routeData, originalAddresses, onNavigateStop }: OptimizedRouteListProps) {
+  // State to track which stops are marked as done
+  const [completedStops, setCompletedStops] = useState<number[]>([]);
+
   if (!routeData || !routeData.optimizedWaypointDetails || routeData.optimizedWaypointDetails.length === 0) {
     return (
       <Card>
@@ -74,7 +78,7 @@ export default function OptimizedRouteList({ routeData, originalAddresses, onNav
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-muted-foreground">Enter your locations and click "Optimize Route" to see your journey plan here.</p>
+          <p className="text-muted-foreground">Enter your locations and click &quot;Optimize Route&quot; to see your journey plan here.</p>
         </CardContent>
       </Card>
     );
@@ -88,6 +92,17 @@ export default function OptimizedRouteList({ routeData, originalAddresses, onNav
       return originalAddresses[index];
     }
     return `Lat: ${waypoint.lat.toFixed(4)}, Lng: ${waypoint.lng.toFixed(4)}`;
+  };
+
+  // Function to mark a stop as done
+  const markStopAsDone = (waypointIndex: number) => {
+    setCompletedStops(prev => {
+      if (prev.includes(waypointIndex)) {
+        return prev.filter(idx => idx !== waypointIndex);
+      } else {
+        return [...prev, waypointIndex];
+      }
+    });
   };
 
 
@@ -109,7 +124,7 @@ export default function OptimizedRouteList({ routeData, originalAddresses, onNav
           {routeData.optimizedWaypointDetails.map((waypoint, waypointIndex) => {
             const isLastWaypoint = waypointIndex === routeData.optimizedWaypointDetails.length - 1;
             const legToNextStop = !isLastWaypoint ? routeData.routeSections[waypointIndex] : null;
-            
+
             let label = '';
             if (waypoint.id === 'origin') { // Check against ID passed to findsequence
               label = 'Starting point'; // Changed label
@@ -136,27 +151,53 @@ export default function OptimizedRouteList({ routeData, originalAddresses, onNav
             const departureSection = routeData.routeSections[waypointIndex]; // For departure time of origin
 
 
+            const isCompleted = completedStops.includes(waypointIndex);
+            const address = getDisplayAddress(waypoint, waypointIndex);
+
             return (
-              <li key={waypoint.id || `waypoint-${waypointIndex}`} className="p-4 border rounded-lg shadow-sm hover:shadow-md transition-shadow">
+              <li
+                key={waypoint.id || `waypoint-${waypointIndex}`}
+                className={`p-4 border rounded-lg shadow-sm hover:shadow-md transition-shadow relative ${isCompleted ? 'border-green-500 border-2' : ''}`}
+              >
+                {isCompleted && (
+                  <div className="absolute top-2 right-2 bg-green-500 text-white px-2 py-0.5 rounded-full text-xs font-medium">
+                    Done
+                  </div>
+                )}
                 <div className="flex justify-between items-start mb-2">
                   <div>
                     {/* Address on top, bold */}
-                    <p className="font-semibold text-lg">{getDisplayAddress(waypoint, waypointIndex)}</p>
+                    <p className="font-semibold text-lg">{address}</p>
                     {/* Label below, smaller and muted */}
                     <h3 className="text-sm text-muted-foreground">{label}</h3>
                   </div>
-                  <Button variant="outline" size="sm" onClick={() => onNavigateStop(waypointIndex)} className="group">
-                    Navigate
-                    <Navigation className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                  </Button>
+                  <div className="flex flex-col gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onNavigateStop(waypointIndex, address)}
+                      className="group"
+                    >
+                      Navigate
+                      <Navigation className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                    </Button>
+                    <Button
+                      variant={isCompleted ? "default" : "secondary"}
+                      size="sm"
+                      onClick={() => markStopAsDone(waypointIndex)}
+                      className="group"
+                    >
+                      {isCompleted ? "Undo" : "Done"}
+                      <CheckCircle className={`ml-2 h-4 w-4 ${isCompleted ? "" : "text-green-500"}`} />
+                    </Button>
+                  </div>
                 </div>
-                
+
                 {/* Arrival Time */}
                 {arrivalSection && (
                   <p className="text-xs text-muted-foreground mt-1 flex items-center">
                     <Clock className="mr-1.5 h-3 w-3" />
                     Arrival: {arrivalSection.arrival.time ? new Date(arrivalSection.arrival.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
-                    {/* Log raw time for debugging: console.log('Raw arrival time:', arrivalSection.arrival.time) */}
                   </p>
                 )}
                  {/* Departure Time for Origin */}
@@ -164,7 +205,6 @@ export default function OptimizedRouteList({ routeData, originalAddresses, onNav
                      <p className="text-xs text-muted-foreground mt-1 flex items-center">
                         <Clock className="mr-1.5 h-3 w-3" />
                         Departure: {departureSection.departure.time ? new Date(departureSection.departure.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
-                        {/* Log raw time for debugging: console.log('Raw departure time:', departureSection.departure.time) */}
                     </p>
                 )}
 

@@ -51,7 +51,7 @@ const useLeafletMap = (mapRef: React.RefObject<HTMLDivElement | null>, routeSect
           // Decode using the @here/flexpolyline library
           const decodedCoordinates = flexpolyline.decode(section.polyline);
           // The result is an object like {polyline: [[lat, lng], ...]} or {polyline: [[lat, lng, elev], ...]}
-          
+
           if (decodedCoordinates && decodedCoordinates.polyline && decodedCoordinates.polyline.length > 0) {
             // Convert to Leaflet's LatLngExpression format (array of [lat, lng])
             const leafletLatLngs: L.LatLngExpression[] = decodedCoordinates.polyline.map(coord => [coord[0], coord[1]]);
@@ -98,6 +98,6 @@ export default function RouteMapPreview({ routeSections, optimizedWaypointDetail
   useLeafletMap(mapRef, routeSections, optimizedWaypointDetails);
 
   return (
-    <div id="map" ref={mapRef} className="w-full h-full min-h-[300px] rounded-lg" />
+    <div id="map" ref={mapRef} className="w-full h-full min-h-[300px] rounded-lg relative z-10" />
   );
 }

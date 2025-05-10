@@ -1,7 +1,7 @@
 'use client';
 
 import PricingSection from '@/components/pricing-section';
-import Header from '@/components/header';
+import SharedNavbar from '@/components/shared-navbar';
 import { useSubscriptionManager } from '@/lib/hooks/useSubscriptionManager'; // Import the custom hook
 
 export default function PricingPage() {
@@ -12,13 +12,13 @@ export default function PricingPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-950">
-      <Header /> {/* Use the reusable Header component */}
+      <SharedNavbar /> {/* Use the shared navbar component */}
 
       <main className="flex-1">
         {/* Use the PricingSection component */}
-        <PricingSection 
-          handleSubscribe={handleSubscribe} 
-          loadingPriceId={loadingPriceId} 
+        <PricingSection
+          handleSubscribe={handleSubscribe}
+          loadingPriceId={loadingPriceId}
         />
       </main>
 

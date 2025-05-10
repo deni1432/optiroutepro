@@ -3,10 +3,8 @@
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
-import { UserButton, SignedIn, SignedOut, SignInButton, useUser } from '@clerk/nextjs'; // Re-import UserButton
-import { X } from 'lucide-react';
-
-import { Route, Settings } from 'lucide-react';
+import { UserButton, SignedIn, SignedOut, SignInButton, SignUpButton, useUser } from '@clerk/nextjs';
+import { X, Route, Settings, Mail } from 'lucide-react';
 
 interface MobileMenuProps {
   isOpen: boolean;
@@ -36,11 +34,11 @@ export default function MobileMenu({ isOpen, toggleMenu }: MobileMenuProps) {
           animate="visible"
           exit="hidden"
           transition={{ duration: 0.3, ease: 'easeInOut' }}
-          className="fixed inset-0 z-[60] bg-background/95 backdrop-blur-sm lg:hidden" // Increased z-index
+          className="fixed inset-0 z-[1000] bg-background/95 backdrop-blur-sm lg:hidden" // Significantly increased z-index to be above map
           onClick={toggleMenu}
         >
           <motion.div
-            className="fixed top-0 right-0 h-full w-full max-w-xs bg-background shadow-xl flex flex-col z-[70]" // Ensure inner content is also high
+            className="fixed top-0 right-0 h-full w-full max-w-xs bg-background shadow-xl flex flex-col z-[1100]" // Increased z-index to be above the backdrop
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex justify-end p-4">
@@ -49,43 +47,68 @@ export default function MobileMenu({ isOpen, toggleMenu }: MobileMenuProps) {
               </Button>
             </div>
             <nav className="flex-grow py-4">
-              {/* Standard Navigation Links */}
-              <Link href="/dashboard" className={linkProps} onClick={toggleMenu}>
-                Dashboard
+              {/* Main Navigation Links */}
+              <Link href="/" className={linkProps} onClick={toggleMenu}>
+                Home
               </Link>
-              <Link href="/pricing" className={linkProps} onClick={toggleMenu}>
-                Pricing
+              <Link href="/#features" className={linkProps} onClick={toggleMenu}>
+                Features
+              </Link>
+              <Link href="/#pricing" className={linkProps} onClick={toggleMenu}>
+                Price
+              </Link>
+              <Link href="/#faq" className={linkProps} onClick={toggleMenu}>
+                FAQ
+              </Link>
+              <Link href="/#support" className={linkProps} onClick={toggleMenu}>
+                Support
               </Link>
 
-              {/* Dashboard Specific Links (Visible for SignedIn users with active subscription) */}
-              {isSignedIn && hasActiveSubscription && (
-                <>
-                  <div className="border-t my-4 mx-4" /> {/* Divider */}
-                  <h3 className="text-sm font-semibold text-muted-foreground px-4 mb-2">Dashboard</h3>
-                  {/* Links navigate to dashboard with query param */}
-                  <Link href="/dashboard?view=optimization" className={dashboardLinkStyle} onClick={toggleMenu}>
-                    <Route className="mr-2 h-5 w-5" /> {/* Adjusted icon size */}
-                    Route Optimization
+              {/* Dashboard Links (Visible for SignedIn users) */}
+              <SignedIn>
+                <div className="border-t my-4 mx-4" /> {/* Divider */}
+                <h3 className="text-sm font-semibold text-muted-foreground px-4 mb-2">Dashboard</h3>
+                {hasActiveSubscription ? (
+                  <>
+                    <Link href="/dashboard?view=optimization" className={dashboardLinkStyle} onClick={toggleMenu}>
+                      <Route className="mr-2 h-5 w-5" />
+                      Route Optimization
+                    </Link>
+                    <Link href="/dashboard?view=account" className={dashboardLinkStyle} onClick={toggleMenu}>
+                      <Settings className="mr-2 h-5 w-5" />
+                      Account Settings
+                    </Link>
+                  </>
+                ) : (
+                  <Link href="/dashboard" className={dashboardLinkStyle} onClick={toggleMenu}>
+                    <Route className="mr-2 h-5 w-5" />
+                    Dashboard
                   </Link>
-                  <Link href="/dashboard?view=account" className={dashboardLinkStyle} onClick={toggleMenu}>
-                    <Settings className="mr-2 h-5 w-5" /> {/* Adjusted icon size */}
-                    Account Settings
-                  </Link>
-                </>
-              )}
+                )}
+              </SignedIn>
 
-              {/* Common auth links/buttons */}
+              {/* Auth Buttons */}
               <div className="mt-auto p-4 border-t">
                 <SignedIn>
-                  {/* UserButton added back for signed-in users, wrapped for visibility */}
-                  <div className="p-2"> {/* Added padding for visibility */}
-                    <UserButton afterSignOutUrl="/" />
+                  <div className="p-2">
+                    <UserButton
+                      appearance={{
+                        elements: {
+                          userButtonAvatarBox: "w-10 h-10",
+                        }
+                      }}
+                    />
                   </div>
                 </SignedIn>
                 <SignedOut>
-                  <SignInButton mode="modal">
-                    <Button className="w-full">Sign In</Button>
-                  </SignInButton>
+                  <div className="flex flex-col space-y-2">
+                    <SignInButton mode="modal">
+                      <Button variant="outline" className="w-full">Sign In</Button>
+                    </SignInButton>
+                    <SignUpButton mode="modal">
+                      <Button className="w-full">Sign Up</Button>
+                    </SignUpButton>
+                  </div>
                 </SignedOut>
               </div>
             </nav>

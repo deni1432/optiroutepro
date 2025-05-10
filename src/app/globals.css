@@ -119,4 +119,18 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /* Ensure Leaflet map doesn't overlay mobile menu */
+  .leaflet-container {
+    z-index: 10 !important;
+  }
+
+  /* Ensure Leaflet controls don't overlay mobile menu */
+  .leaflet-control-container {
+    z-index: 10 !important;
+  }
+
+  .leaflet-control-zoom {
+    z-index: 10 !important;
+  }
 }
